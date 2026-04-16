@@ -79,40 +79,17 @@
 
   .service:first-child { border-top: 1px solid var(--border); }
 
-  .service-left { display: flex; flex-direction: column; gap: 2px; }
-
   .service-name {
     font-size: 0.92rem;
     font-weight: 500;
-  }
-
-  .service-desc {
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    color: var(--text-3);
-  }
-
-  .service-right {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-  }
-
-  .latency {
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    color: var(--text-3);
   }
 
   .status {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.82rem;
+    color: var(--text-2);
   }
 
   .status .dot {
@@ -252,19 +229,11 @@
   /* ── Footer ── */
   footer {
     margin-top: 56px;
-    display: flex;
-    justify-content: space-between;
+    text-align: center;
     font-family: var(--mono);
     font-size: 0.7rem;
     color: var(--text-3);
   }
-
-  footer a {
-    color: var(--text-2);
-    text-decoration: none;
-  }
-
-  footer a:hover { text-decoration: underline; }
 
   /* ── Loading ── */
   .loading {
@@ -314,10 +283,10 @@ const SUPABASE_URL = 'https://fbtndmrbruifjdeaydjh.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZidG5kbXJicnVpZmpkZWF5ZGpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzOTUsImV4cCI6MjA5MTg2MDM5NX0.n2tlq1Vbq4RqVKVHLHCY_OykV5Sq3bCP_GOxrUKHvu8';
 
 const SERVICES = [
-  { key: 'reachability', name: 'API Reachability', desc: 'get_server_capabilities()' },
-  { key: 'sampling', name: 'Sampling Pipeline', desc: 'Llama-3.2-1B inference' },
-  { key: 'openai_compatible', name: 'OpenAI-Compatible', desc: '/v1/completions endpoint' },
-  { key: 'training_infra', name: 'Training Infrastructure', desc: 'LoRA training client' },
+  { key: 'reachability', name: 'API' },
+  { key: 'sampling', name: 'Inference' },
+  { key: 'openai_compatible', name: 'OpenAI-Compatible API' },
+  { key: 'training_infra', name: 'Training' },
 ];
 
 const TICKS = 72;
@@ -375,16 +344,13 @@ function ago(iso) {
   return Math.floor(s/86400) + 'd ago';
 }
 
-function lat(ms) {
-  if (ms == null) return '\u2014';
-  return ms < 1000 ? Math.round(ms) + 'ms' : (ms/1000).toFixed(1) + 's';
-}
+function statusLabel(st) { return st === 'up' ? 'Operational' : 'Outage'; }
 
 function render(latest, hist, inc) {
   const sts = SERVICES.map(s => latest[s.key]?.status);
   const allUp = sts.every(s => s === 'up');
   const allDown = sts.every(s => s === 'down' || !s);
-  const oTxt = allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Partial degradation';
+  const oTxt = allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
   const oCls = allUp ? '' : allDown ? 'down' : 'degraded';
 
   document.getElementById('app').innerHTML = `
@@ -397,14 +363,8 @@ function render(latest, hist, inc) {
       ${SERVICES.map(s => {
         const d = latest[s.key], st = d?.status || 'down';
         return `<div class="service">
-          <div class="service-left">
-            <div class="service-name">${s.name}</div>
-            <div class="service-desc">${s.desc}</div>
-          </div>
-          <div class="service-right">
-            <span class="latency">${lat(d?.latency_ms)}</span>
-            <span class="status ${st}"><span class="dot"></span>${st}</span>
-          </div>
+          <div class="service-name">${s.name}</div>
+          <span class="status ${st}"><span class="dot"></span>${statusLabel(st)}</span>
         </div>`;
       }).join('')}
     </div>
@@ -412,7 +372,7 @@ function render(latest, hist, inc) {
     <div class="timeline-section">
       <div class="section-head">
         <div class="section-title">Last 24 hours</div>
-        <div class="section-sub">${TICKS} intervals</div>
+        <div class="section-sub">Updated every 10 min</div>
       </div>
       ${SERVICES.map(s => {
         const tk = ticks(hist, s.key), u = uptime(hist, s.key);
@@ -430,7 +390,7 @@ function render(latest, hist, inc) {
     <div class="incidents-section">
       <div class="section-head">
         <div class="section-title">Recent incidents</div>
-        <div class="section-sub">${inc.length} in last 24h</div>
+        <div class="section-sub">Last 24 hours</div>
       </div>
       ${inc.length === 0
         ? '<div class="no-incidents">No incidents in the last 24 hours.</div>'
@@ -449,8 +409,9 @@ function render(latest, hist, inc) {
     </div>
 
     <footer>
-      <span>Refreshes every 60s</span>
-      <a href="https://github.com/lokashrinav/tinker-status">Source</a>
+      <span>Last checked ${latest[SERVICES[0].key]?.checked_at
+        ? new Date(latest[SERVICES[0].key].checked_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
+        : '\u2014'}</span>
     </footer>`;
 }
 
