@@ -9,14 +9,26 @@ import tinker
 from tinker import types
 
 BASE_MODEL = "meta-llama/Llama-3.2-1B"
+
+# Documented at https://tinker-docs.thinkingmachines.ai/compatible-apis/openai
+# Still labeled beta — could change without notice.
 OAI_BASE_URL = "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1"
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
+CHECK_TIMEOUT = 60
+
 
 def now_utc():
     return datetime.now(timezone.utc).isoformat()
+
+
+async def with_timeout(coro, timeout=CHECK_TIMEOUT):
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"Timed out after {timeout}s")
 
 
 # ── Checks ──────────────────────────────────────────────────────────────────
@@ -25,7 +37,9 @@ def now_utc():
 async def check_reachability(service_client):
     try:
         start = time.time()
-        capabilities = await service_client.get_server_capabilities_async()
+        capabilities = await with_timeout(
+            service_client.get_server_capabilities_async()
+        )
         model_names = [str(m) for m in capabilities.supported_models]
         return {
             "service": "reachability",
@@ -49,8 +63,10 @@ async def check_sampling(service_client):
 
         prompt = types.ModelInput.from_ints(tokenizer.encode("2+2="))
         params = types.SamplingParams(max_tokens=16, temperature=0.0)
-        result = await sampling_client.sample_async(
-            prompt=prompt, num_samples=1, sampling_params=params
+        result = await with_timeout(
+            sampling_client.sample_async(
+                prompt=prompt, num_samples=1, sampling_params=params
+            )
         )
 
         output_text = tokenizer.decode(result.sequences[0].tokens)
@@ -80,7 +96,7 @@ async def check_openai_compatible():
 
     try:
         start = time.time()
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=CHECK_TIMEOUT) as client:
             resp = await client.post(
                 f"{OAI_BASE_URL}/completions", json=payload, headers=headers
             )
@@ -105,8 +121,10 @@ async def check_openai_compatible():
 async def check_training_client(service_client):
     try:
         start = time.time()
-        await service_client.create_lora_training_client_async(
-            base_model=BASE_MODEL, rank=8
+        await with_timeout(
+            service_client.create_lora_training_client_async(
+                base_model=BASE_MODEL, rank=8
+            )
         )
         return {
             "service": "training_infra",
@@ -160,7 +178,7 @@ async def main():
 
     print("=== Tinker Health Check ===\n")
 
-    print("[1/4] Reachability (get_server_capabilities) ...")
+    print("[1/4] Reachability ...")
     reachability = await check_reachability(service_client)
     results.append(reachability)
     print(f"      -> {reachability['status']}\n")
@@ -170,17 +188,17 @@ async def main():
         for svc in ("sampling", "openai_compatible", "training_infra"):
             results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
     else:
-        print("[2/4] Sampling (Llama-3.2-1B, prompt='2+2=') ...")
+        print("[2/4] Sampling ...")
         sampling = await check_sampling(service_client)
         results.append(sampling)
         print(f"      -> {sampling['status']}\n")
 
-        print("[3/4] OpenAI-compatible endpoint (/completions) ...")
+        print("[3/4] OpenAI-compatible ...")
         oai = await check_openai_compatible()
         results.append(oai)
         print(f"      -> {oai['status']}\n")
 
-        print("[4/4] Training infra (create_lora_training_client) ...")
+        print("[4/4] Training infra ...")
         training = await check_training_client(service_client)
         results.append(training)
         print(f"      -> {training['status']}\n")
