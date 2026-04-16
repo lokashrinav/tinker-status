@@ -16,7 +16,6 @@
     --green: #2da44e;
     --red: #cf222e;
     --yellow: #bf8700;
-    --hover: #fafafa;
     --serif: 'Source Serif 4', Georgia, serif;
     --sans: 'Inter', -apple-system, sans-serif;
     --mono: 'IBM Plex Mono', monospace;
@@ -37,7 +36,6 @@
     padding: 80px 24px 100px;
   }
 
-  /* ── Header ── */
   header { margin-bottom: 64px; }
 
   h1 {
@@ -62,9 +60,13 @@
     border-radius: 50%;
     background: var(--green);
   }
-
   .overall .dot.degraded { background: var(--yellow); }
   .overall .dot.down { background: var(--red); }
+
+  .overall .ts {
+    margin-left: auto;
+    color: var(--text-3);
+  }
 
   /* ── Services ── */
   .services { margin-bottom: 64px; }
@@ -76,40 +78,28 @@
     padding: 18px 0;
     border-bottom: 1px solid var(--border);
   }
-
   .service:first-child { border-top: 1px solid var(--border); }
 
-  .service-name {
-    font-size: 0.92rem;
-    font-weight: 500;
-  }
+  .service-name { font-size: 0.92rem; font-weight: 500; }
 
   .status {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 0.82rem;
-    color: var(--text-2);
   }
-
-  .status .dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-  }
-
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; }
   .status.up { color: var(--green); }
   .status.up .dot { background: var(--green); }
   .status.down { color: var(--red); }
   .status.down .dot { background: var(--red); }
 
-  /* ── Timeline ── */
-  .timeline-section { margin-bottom: 64px; }
-
+  /* ── Section headers ── */
   .section-head {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: 28px;
+    margin-bottom: 20px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
   }
@@ -126,51 +116,101 @@
     color: var(--text-3);
   }
 
-  .tl-row { margin-bottom: 24px; }
+  /* ── Uptime table ── */
+  .uptime-section { margin-bottom: 64px; }
 
-  .tl-label {
+  .uptime-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .uptime-table th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-3);
+    text-align: right;
+    padding: 0 0 10px 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .uptime-table th:first-child { text-align: left; padding-left: 0; }
+
+  .uptime-table td {
+    padding: 12px 0 12px 16px;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .uptime-table td:first-child {
+    text-align: left;
+    font-family: var(--sans);
+    font-weight: 500;
+    padding-left: 0;
+  }
+
+  .uptime-table .good { color: var(--green); }
+  .uptime-table .warn { color: var(--yellow); }
+  .uptime-table .bad { color: var(--red); }
+  .uptime-table .na { color: var(--text-3); }
+
+  /* ── Uptime bar ── */
+  .bar-section { margin-bottom: 64px; }
+
+  .bar-row { margin-bottom: 20px; }
+
+  .bar-label {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     margin-bottom: 6px;
   }
 
-  .tl-name { font-size: 0.82rem; font-weight: 500; }
+  .bar-name { font-size: 0.82rem; font-weight: 500; }
 
-  .tl-pct {
-    font-family: var(--mono);
-    font-size: 0.78rem;
-  }
+  .bar-pct { font-family: var(--mono); font-size: 0.78rem; }
+  .bar-pct.good { color: var(--green); }
+  .bar-pct.warn { color: var(--yellow); }
+  .bar-pct.bad { color: var(--red); }
 
-  .tl-pct.good { color: var(--green); }
-  .tl-pct.warn { color: var(--yellow); }
-  .tl-pct.bad { color: var(--red); }
-
-  .tl-bar {
+  .bar {
     display: flex;
     gap: 1.5px;
     height: 24px;
   }
 
-  .tl-bar .t {
+  .bar .t {
     flex: 1;
     border-radius: 2px;
     transition: opacity 0.15s;
   }
+  .bar .t.up { background: var(--green); opacity: 0.35; }
+  .bar .t.up:hover { opacity: 0.7; }
+  .bar .t.down { background: var(--red); opacity: 0.7; }
+  .bar .t.down:hover { opacity: 1; }
+  .bar .t.empty { background: #f0f0f0; }
 
-  .tl-bar .t.up { background: var(--green); opacity: 0.35; }
-  .tl-bar .t.up:hover { opacity: 0.7; }
-  .tl-bar .t.down { background: var(--red); opacity: 0.7; }
-  .tl-bar .t.down:hover { opacity: 1; }
-  .tl-bar .t.empty { background: #f0f0f0; }
-
-  .tl-range {
+  .bar-range {
     display: flex;
     justify-content: space-between;
     margin-top: 8px;
     font-family: var(--mono);
     font-size: 0.68rem;
     color: var(--text-3);
+  }
+
+  /* ── Latency table ── */
+  .latency-section { margin-bottom: 64px; }
+
+  .latency-note {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    margin-top: -12px;
+    margin-bottom: 20px;
   }
 
   /* ── Incidents ── */
@@ -184,7 +224,6 @@
     border-bottom: 1px solid var(--border);
     font-size: 0.85rem;
   }
-
   .incident:first-child { border-top: 1px solid var(--border); }
 
   .incident-dot {
@@ -197,8 +236,13 @@
   }
 
   .incident-body { flex: 1; min-width: 0; }
-
   .incident-svc { font-weight: 500; }
+
+  .incident-meta {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-3);
+  }
 
   .incident-err {
     font-family: var(--mono);
@@ -226,7 +270,6 @@
     border-bottom: 1px solid var(--border);
   }
 
-  /* ── Footer ── */
   footer {
     margin-top: 56px;
     text-align: center;
@@ -235,7 +278,6 @@
     color: var(--text-3);
   }
 
-  /* ── Loading ── */
   .loading {
     display: flex;
     flex-direction: column;
@@ -257,13 +299,45 @@
     animation: spin 0.7s linear infinite;
   }
 
-  /* ── Responsive ── */
+  /* ── Window tabs ── */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tab:first-child { border-radius: 6px 0 0 6px; }
+  .tab:last-child { border-radius: 0 6px 6px 0; }
+  .tab + .tab { border-left: none; }
+
+  .tab.active {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+
+  .tab:hover:not(.active) { color: var(--text); }
+
   @media (max-width: 600px) {
-    .container { padding: 48px 20px 64px; }
+    .container { padding: 48px 16px 64px; }
     h1 { font-size: 1.6rem; }
     .service { flex-wrap: wrap; gap: 8px; }
+    .uptime-table { font-size: 0.75rem; }
+    .uptime-table th, .uptime-table td { padding-left: 10px; }
     .incident { flex-wrap: wrap; }
-    footer { flex-direction: column; gap: 4px; }
+    .overall { flex-wrap: wrap; }
+    .overall .ts { margin-left: 16px; }
   }
 </style>
 </head>
@@ -279,48 +353,89 @@
 </div>
 
 <script>
-const SUPABASE_URL = 'https://fbtndmrbruifjdeaydjh.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZidG5kbXJicnVpZmpkZWF5ZGpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzOTUsImV4cCI6MjA5MTg2MDM5NX0.n2tlq1Vbq4RqVKVHLHCY_OykV5Sq3bCP_GOxrUKHvu8';
+const SB_URL = 'https://fbtndmrbruifjdeaydjh.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZidG5kbXJicnVpZmpkZWF5ZGpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzOTUsImV4cCI6MjA5MTg2MDM5NX0.n2tlq1Vbq4RqVKVHLHCY_OykV5Sq3bCP_GOxrUKHvu8';
 
-const SERVICES = [
+const SVCS = [
   { key: 'reachability', name: 'API' },
   { key: 'sampling', name: 'Inference' },
   { key: 'openai_compatible', name: 'OpenAI-Compatible API' },
   { key: 'training_infra', name: 'Training' },
 ];
 
-const TICKS = 72;
+const WINDOWS = [
+  { key: '24h', label: '24h', hours: 24 },
+  { key: '7d',  label: '7d',  hours: 168 },
+  { key: '30d', label: '30d', hours: 720 },
+  { key: '90d', label: '90d', hours: 2160 },
+];
 
-async function query(path) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
+const TICKS = 72;
+let allData = null;
+let activeWindow = '90d';
+
+async function q(path) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
   });
   return r.json();
 }
 
-async function fetchLatest() {
-  const rows = await query('check_results?order=checked_at.desc,service&limit=100');
-  const m = {};
-  for (const r of rows) { if (!m[r.service]) m[r.service] = r; }
-  return m;
+async function fetchAll() {
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+  const [rows, latest] = await Promise.all([
+    q(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error`),
+    q('check_results?order=checked_at.desc,service&limit=100'),
+  ]);
+
+  const latestMap = {};
+  for (const r of latest) { if (!latestMap[r.service]) latestMap[r.service] = r; }
+
+  return { rows, latest: latestMap };
 }
 
-async function fetchHistory() {
-  const since = new Date(Date.now() - 24*3600*1000).toISOString();
-  return query(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at`);
+function filterByWindow(rows, hours) {
+  const cutoff = Date.now() - hours * 3600 * 1000;
+  return rows.filter(r => new Date(r.checked_at).getTime() >= cutoff);
 }
 
-async function fetchIncidents() {
-  const since = new Date(Date.now() - 24*3600*1000).toISOString();
-  return query(`check_results?status=eq.down&checked_at=gte.${since}&order=checked_at.desc&limit=20&select=service,error,checked_at`);
+function calcUptime(rows, key) {
+  const s = rows.filter(r => r.service === key);
+  if (!s.length) return null;
+  return (s.filter(r => r.status === 'up').length / s.length) * 100;
 }
 
-function ticks(hist, key) {
-  const rows = hist.filter(r => r.service === key);
-  if (!rows.length) return Array(TICKS).fill('empty');
-  const now = Date.now(), start = now - 24*3600*1000, bkt = (now - start) / TICKS;
+function pctStr(p) { return p === null ? '\u2014' : p.toFixed(2) + '%'; }
+function pctCls(p) { return p === null ? 'na' : p >= 99.5 ? 'good' : p >= 95 ? 'warn' : 'bad'; }
+
+function percentile(arr, p) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const i = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, i)];
+}
+
+function fmtMs(ms) {
+  if (ms === null) return '\u2014';
+  if (ms < 1000) return Math.round(ms) + 'ms';
+  return (ms / 1000).toFixed(1) + 's';
+}
+
+function calcLatency(rows, key) {
+  const vals = rows.filter(r => r.service === key && r.latency_ms != null).map(r => r.latency_ms);
+  return {
+    p50: percentile(vals, 50),
+    p95: percentile(vals, 95),
+    p99: percentile(vals, 99),
+  };
+}
+
+function buildTicks(rows24h, key) {
+  const svc = rows24h.filter(r => r.service === key);
+  if (!svc.length) return Array(TICKS).fill('empty');
+  const now = Date.now(), start = now - 24 * 3600 * 1000, bkt = (now - start) / TICKS;
   const t = Array(TICKS).fill('empty');
-  for (const r of rows) {
+  for (const r of svc) {
     const i = Math.min(Math.floor((new Date(r.checked_at).getTime() - start) / bkt), TICKS - 1);
     if (i < 0) continue;
     if (t[i] === 'empty' || r.status === 'down') t[i] = r.status;
@@ -328,97 +443,181 @@ function ticks(hist, key) {
   return t;
 }
 
-function uptime(hist, key) {
-  const rows = hist.filter(r => r.service === key);
-  if (!rows.length) return null;
-  return ((rows.filter(r => r.status === 'up').length / rows.length) * 100).toFixed(2);
+function buildIncidents(rows, hours) {
+  const filtered = filterByWindow(rows, hours).filter(r => r.status === 'down');
+  const incidents = [];
+  let current = null;
+
+  for (const r of filtered) {
+    const t = new Date(r.checked_at).getTime();
+    if (current && current.service === r.service && t - current.lastSeen < 25 * 60 * 1000) {
+      current.lastSeen = t;
+      current.count++;
+    } else {
+      if (current) incidents.push(current);
+      current = {
+        service: r.service,
+        error: r.error,
+        start: t,
+        lastSeen: t,
+        count: 1,
+      };
+    }
+  }
+  if (current) incidents.push(current);
+  return incidents.reverse();
 }
 
-function pctCls(p) { return p === null ? '' : p >= 99.5 ? 'good' : p >= 95 ? 'warn' : 'bad'; }
-
-function ago(iso) {
-  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (s < 60) return s + 's ago';
-  if (s < 3600) return Math.floor(s/60) + 'm ago';
-  if (s < 86400) return Math.floor(s/3600) + 'h ago';
-  return Math.floor(s/86400) + 'd ago';
+function fmtDuration(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
 }
 
-function statusLabel(st) { return st === 'up' ? 'Operational' : 'Outage'; }
+function fmtTime(ts) {
+  return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
-function render(latest, hist, inc) {
-  const sts = SERVICES.map(s => latest[s.key]?.status);
+function render() {
+  if (!allData) return;
+  const { rows, latest } = allData;
+  const win = WINDOWS.find(w => w.key === activeWindow);
+  const winRows = filterByWindow(rows, win.hours);
+  const rows24h = filterByWindow(rows, 24);
+
+  const sts = SVCS.map(s => latest[s.key]?.status);
   const allUp = sts.every(s => s === 'up');
   const allDown = sts.every(s => s === 'down' || !s);
   const oTxt = allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
   const oCls = allUp ? '' : allDown ? 'down' : 'degraded';
 
+  const lastCheck = latest[SVCS[0].key]?.checked_at;
+  const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
+
+  const incidents = buildIncidents(rows, win.hours);
+
   document.getElementById('app').innerHTML = `
     <header>
       <h1>Tinker Status</h1>
-      <div class="overall"><div class="dot ${oCls}"></div>${oTxt}</div>
+      <div class="overall">
+        <div class="dot ${oCls}"></div>${oTxt}
+        <span class="ts">Last checked ${lastStr}</span>
+      </div>
     </header>
 
     <div class="services">
-      ${SERVICES.map(s => {
+      ${SVCS.map(s => {
         const d = latest[s.key], st = d?.status || 'down';
         return `<div class="service">
           <div class="service-name">${s.name}</div>
-          <span class="status ${st}"><span class="dot"></span>${statusLabel(st)}</span>
+          <span class="status ${st}"><span class="dot"></span>${st === 'up' ? 'Operational' : 'Outage'}</span>
         </div>`;
       }).join('')}
     </div>
 
-    <div class="timeline-section">
+    <div class="bar-section">
       <div class="section-head">
         <div class="section-title">Last 24 hours</div>
         <div class="section-sub">Updated every 10 min</div>
       </div>
-      ${SERVICES.map(s => {
-        const tk = ticks(hist, s.key), u = uptime(hist, s.key);
-        return `<div class="tl-row">
-          <div class="tl-label">
-            <span class="tl-name">${s.name}</span>
-            <span class="tl-pct ${pctCls(u)}">${u !== null ? u + '%' : 'No data'}</span>
+      ${SVCS.map(s => {
+        const tk = buildTicks(rows24h, s.key);
+        const u = calcUptime(rows24h, s.key);
+        return `<div class="bar-row">
+          <div class="bar-label">
+            <span class="bar-name">${s.name}</span>
+            <span class="bar-pct ${pctCls(u)}">${pctStr(u)}</span>
           </div>
-          <div class="tl-bar">${tk.map(t => `<div class="t ${t}"></div>`).join('')}</div>
+          <div class="bar">${tk.map(t => `<div class="t ${t}"></div>`).join('')}</div>
         </div>`;
       }).join('')}
-      <div class="tl-range"><span>24h ago</span><span>now</span></div>
+      <div class="bar-range"><span>24h ago</span><span>now</span></div>
+    </div>
+
+    <div class="uptime-section">
+      <div class="section-head">
+        <div class="section-title">Uptime</div>
+      </div>
+      <table class="uptime-table">
+        <thead><tr>
+          <th></th>${WINDOWS.map(w => `<th>${w.label}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${SVCS.map(s => `<tr>
+            <td>${s.name}</td>
+            ${WINDOWS.map(w => {
+              const u = calcUptime(filterByWindow(rows, w.hours), s.key);
+              return `<td class="${pctCls(u)}">${pctStr(u)}</td>`;
+            }).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="latency-section">
+      <div class="section-head">
+        <div class="section-title">Response time</div>
+        <div class="section-sub">${win.label} window</div>
+      </div>
+      <p class="latency-note">Measured from a single GitHub Actions runner. Useful as a trend, not an absolute benchmark.</p>
+      <div class="tabs">
+        ${WINDOWS.map(w =>
+          `<button class="tab ${w.key === activeWindow ? 'active' : ''}" onclick="setWindow('${w.key}')">${w.label}</button>`
+        ).join('')}
+      </div>
+      <table class="uptime-table">
+        <thead><tr>
+          <th></th><th>p50</th><th>p95</th><th>p99</th>
+        </tr></thead>
+        <tbody>
+          ${SVCS.map(s => {
+            const l = calcLatency(winRows, s.key);
+            return `<tr>
+              <td>${s.name}</td>
+              <td>${fmtMs(l.p50)}</td>
+              <td>${fmtMs(l.p95)}</td>
+              <td>${fmtMs(l.p99)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
     </div>
 
     <div class="incidents-section">
       <div class="section-head">
-        <div class="section-title">Recent incidents</div>
-        <div class="section-sub">Last 24 hours</div>
+        <div class="section-title">Incidents</div>
+        <div class="section-sub">${win.label} window</div>
       </div>
-      ${inc.length === 0
-        ? '<div class="no-incidents">No incidents in the last 24 hours.</div>'
-        : inc.map(i => {
-            const svc = SERVICES.find(s => s.key === i.service);
+      ${incidents.length === 0
+        ? `<div class="no-incidents">No incidents in the last ${win.label}.</div>`
+        : incidents.map(inc => {
+            const svc = SVCS.find(s => s.key === inc.service);
+            const dur = fmtDuration(inc.lastSeen - inc.start);
             return `<div class="incident">
               <div class="incident-dot"></div>
               <div class="incident-body">
-                <div class="incident-svc">${svc?.name || i.service}</div>
-                <div class="incident-err">${i.error || 'Unknown error'}</div>
+                <div class="incident-svc">${svc?.name || inc.service}</div>
+                <div class="incident-meta">${fmtTime(inc.start)}${inc.count > 1 ? ` \u00b7 ${dur} \u00b7 ${inc.count} failed checks` : ''}</div>
+                <div class="incident-err">${inc.error || 'Unknown error'}</div>
               </div>
-              <div class="incident-time">${ago(i.checked_at)}</div>
             </div>`;
           }).join('')
       }
     </div>
 
-    <footer>
-      <span>Last checked ${latest[SERVICES[0].key]?.checked_at
-        ? new Date(latest[SERVICES[0].key].checked_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
-        : '\u2014'}</span>
-    </footer>`;
+    <footer>Last checked ${lastStr}</footer>`;
+}
+
+function setWindow(key) {
+  activeWindow = key;
+  render();
 }
 
 async function load() {
   try {
-    const [l, h, i] = await Promise.all([fetchLatest(), fetchHistory(), fetchIncidents()]);
-    render(l, h, i);
+    allData = await fetchAll();
+    render();
   } catch (e) {
     document.getElementById('app').innerHTML =
       `<div class="loading" style="color:var(--red)">Failed to load: ${e.message}</div>`;
