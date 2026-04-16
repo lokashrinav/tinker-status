@@ -22,15 +22,16 @@ def now_utc():
 # ── Checks ──────────────────────────────────────────────────────────────────
 
 
-def check_reachability(service_client):
+async def check_reachability(service_client):
     try:
         start = time.time()
-        capabilities = service_client.get_server_capabilities()
+        capabilities = await service_client.get_server_capabilities_async()
+        model_names = [str(m) for m in capabilities.supported_models]
         return {
             "service": "reachability",
             "status": "up",
             "latency_ms": round((time.time() - start) * 1000, 1),
-            "meta": {"supported_models": capabilities.supported_models},
+            "meta": {"supported_models": model_names},
         }
     except Exception as e:
         return {
@@ -101,10 +102,10 @@ async def check_openai_compatible():
         }
 
 
-def check_training_client(service_client):
+async def check_training_client(service_client):
     try:
         start = time.time()
-        service_client.create_lora_training_client(
+        await service_client.create_lora_training_client_async(
             base_model=BASE_MODEL, rank=8
         )
         return {
@@ -160,7 +161,7 @@ async def main():
     print("=== Tinker Health Check ===\n")
 
     print("[1/4] Reachability (get_server_capabilities) ...")
-    reachability = check_reachability(service_client)
+    reachability = await check_reachability(service_client)
     results.append(reachability)
     print(f"      -> {reachability['status']}\n")
 
@@ -180,7 +181,7 @@ async def main():
         print(f"      -> {oai['status']}\n")
 
         print("[4/4] Training infra (create_lora_training_client) ...")
-        training = check_training_client(service_client)
+        training = await check_training_client(service_client)
         results.append(training)
         print(f"      -> {training['status']}\n")
 
