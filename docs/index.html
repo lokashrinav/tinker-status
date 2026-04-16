@@ -399,9 +399,15 @@ function filterByWindow(rows, hours) {
   return rows.filter(r => new Date(r.checked_at).getTime() >= cutoff);
 }
 
-function calcUptime(rows, key) {
+function calcUptime(rows, key, windowHours) {
   const s = rows.filter(r => r.service === key);
   if (!s.length) return null;
+  if (windowHours) {
+    const earliest = new Date(s[0].checked_at).getTime();
+    const span = Date.now() - earliest;
+    const windowMs = windowHours * 3600 * 1000;
+    if (span < windowMs * 0.5) return null;
+  }
   return (s.filter(r => r.status === 'up').length / s.length) * 100;
 }
 
@@ -421,8 +427,14 @@ function fmtMs(ms) {
   return (ms / 1000).toFixed(1) + 's';
 }
 
-function calcLatency(rows, key) {
-  const vals = rows.filter(r => r.service === key && r.latency_ms != null).map(r => r.latency_ms);
+function calcLatency(rows, key, windowHours) {
+  const svc = rows.filter(r => r.service === key && r.latency_ms != null);
+  if (windowHours && svc.length) {
+    const earliest = new Date(svc[0].checked_at).getTime();
+    const span = Date.now() - earliest;
+    if (span < windowHours * 3600 * 1000 * 0.5) return { p50: null, p95: null, p99: null };
+  }
+  const vals = svc.map(r => r.latency_ms);
   return {
     p50: percentile(vals, 50),
     p95: percentile(vals, 95),
@@ -523,7 +535,7 @@ function render() {
       </div>
       ${SVCS.map(s => {
         const tk = buildTicks(rows24h, s.key);
-        const u = calcUptime(rows24h, s.key);
+        const u = calcUptime(rows24h, s.key, 24);
         return `<div class="bar-row">
           <div class="bar-label">
             <span class="bar-name">${s.name}</span>
@@ -547,7 +559,7 @@ function render() {
           ${SVCS.map(s => `<tr>
             <td>${s.name}</td>
             ${WINDOWS.map(w => {
-              const u = calcUptime(filterByWindow(rows, w.hours), s.key);
+              const u = calcUptime(filterByWindow(rows, w.hours), s.key, w.hours);
               return `<td class="${pctCls(u)}">${pctStr(u)}</td>`;
             }).join('')}
           </tr>`).join('')}
@@ -572,7 +584,7 @@ function render() {
         </tr></thead>
         <tbody>
           ${SVCS.map(s => {
-            const l = calcLatency(winRows, s.key);
+            const l = calcLatency(winRows, s.key, win.hours);
             return `<tr>
               <td>${s.name}</td>
               <td>${fmtMs(l.p50)}</td>
