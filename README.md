@@ -1,68 +1,44 @@
 # tinker-status
 
-Uptime monitor for the [Tinker](https://thinkingmachines.ai/tinker) training API. Tinker has no official status page, no community monitoring, and no public status endpoint. This fills that gap.
+Uptime monitor for the [Tinker](https://thinkingmachines.ai/tinker) API. I got tired of not knowing whether my code was broken or Tinker was down, so I built this.
 
 **Live:** [lokashrinav.github.io/tinker-status](https://lokashrinav.github.io/tinker-status)
 
----
-
 ## What it checks
 
-Four surfaces of the Tinker API, tested independently because they can fail independently:
+Every 10 minutes, four things get hit independently:
 
-| Check | What it actually does | Why |
-|---|---|---|
-| **API** | `get_server_capabilities()` | Cheapest call. Confirms the service is reachable and responding. |
-| **Inference** | Sends `"2+2="` to Llama-3.2-1B via `sample_async()` | Tests the full inference pipeline, not just a health endpoint. |
-| **OpenAI-Compatible API** | `POST /v1/completions` against the [beta endpoint](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai) | Different code path from the SDK. Many users hit this instead of the native client. |
-| **Training** | `create_lora_training_client()` with rank 8 | Verifies the training infra accepts connections and allocates resources. Does not run `forward_backward()` — that would be expensive at 144 checks/day. |
+- **API reachability** calls `get_server_capabilities()`. Cheapest call. If this fails, everything else is skipped.
+- **Inference** sends `"2+2="` to Llama-3.2-1B via `sample_async()`. Tests the whole inference pipeline, not just a ping.
+- **OpenAI-compatible endpoint** hits `POST /v1/completions` against the [beta endpoint](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai). Different code path from the SDK, and a lot of people actually use this one.
+- **Training** calls `create_lora_training_client()` with rank 8. Doesn't actually run `forward_backward()` because doing that 144 times a day would cost real money. Just confirms the training infra will accept a client.
 
-Every call has a 60-second timeout. A hang is treated as downtime.
+60s timeout on every call. Hangs count as down.
 
-## Architecture
+## How it works
 
-```
-GitHub Actions (cron every 10 min)
-        │
-        ▼
-    check.py ──── Tinker SDK + HTTP ───▶ Tinker API
-        │
-        ▼
-    Supabase (Postgres)
-        ▲
-        │
-    docs/index.html ◀── GitHub Pages
-    (reads via anon key, RLS enforced)
-```
+GitHub Actions runs `check.py` on a cron schedule. The script hits the Tinker SDK and writes results to a Supabase Postgres table. The status page is a static HTML file on GitHub Pages that reads from Supabase using the anon key (read only, RLS enforced). No servers, no backend, everything on free tiers.
 
-No servers to manage. The entire thing runs on free tiers — GitHub Actions, Supabase, and GitHub Pages.
+## Stuff that's broken or not great
 
-## Known limitations
+- GitHub Actions cron drifts. `*/10 * * * *` really means "roughly every 10 minutes, sometimes 30." If you need real monitoring, use a real monitoring tool.
+- One check location (GitHub's runners, somewhere in the US). Regional outages won't show up.
+- Training check is shallow. Client init works does not mean the training loop works.
+- The OpenAI endpoint URL is hardcoded. If Tinker moves it, this will throw false red until I notice.
+- No alerting yet. You have to look at the page.
 
-This is a community monitoring tool with honest tradeoffs:
+## Fork it
 
-- **GitHub Actions cron is not precise.** `*/10 * * * *` means "roughly every 10 minutes." Under load, GitHub can delay cron jobs by 5–30+ minutes. Short outages between checks are invisible.
-- **Single check location.** Runs from GitHub's `ubuntu-latest` runners, likely US-based. Regional issues won't be detected.
-- **Training check is shallow.** It only tests client initialization, not the full `forward_backward()` → `optim_step()` loop. A failure in the training pipeline itself would not be caught.
-- **OpenAI endpoint URL is hardcoded.** The beta endpoint could change without notice. If Tinker moves the URL, this will report a false outage until updated.
-- **No alerting.** This is a dashboard, not a pager. You have to look at it to know something is down.
+Three GitHub secrets:
 
-## Setup (if you want to fork this)
-
-You need three secrets in your GitHub repo (Settings → Secrets → Actions):
-
-| Secret | Where to get it |
+| Secret | Where |
 |---|---|
 | `TINKER_API_KEY` | [Tinker Console](https://tinker-console.thinkingmachines.ai/) |
-| `SUPABASE_URL` | Supabase dashboard → Settings → API |
-| `SUPABASE_SERVICE_KEY` | Same page — the `service_role` key (not `anon`) |
+| `SUPABASE_URL` | Supabase dashboard, Settings, API |
+| `SUPABASE_SERVICE_KEY` | Same page, the `service_role` key |
 
-Then run `supabase_schema.sql` in your Supabase SQL Editor to create the table. The schema enforces RLS: the anon key can only read, writes require the service role key.
-
-The status page deploys via GitHub Pages from the `/docs` folder.
+Run `supabase_schema.sql` in the Supabase SQL Editor. RLS is on so the anon key can only read and the service key handles writes. Status page deploys from `/docs` via GitHub Pages.
 
 ## Cost
 
-- **GitHub Actions:** Free (public repo).
-- **Supabase:** Free tier. ~576 rows/day (4 services × 144 checks).
-- **Tinker:** The API, inference, and OpenAI checks consume tokens. The training check allocates GPU resources briefly. Monitor your [Tinker billing](https://tinker-console.thinkingmachines.ai/) after the first 24 hours.
+GitHub Actions is free. Supabase free tier handles the ~576 rows/day easily. Tinker usage is negligible at this check frequency.
