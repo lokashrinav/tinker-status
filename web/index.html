@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tinker Status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06060a;
+    --surface: #0d0d14;
+    --surface-2: #14141f;
+    --border: #1e1e2e;
+    --text: #e2e2ef;
+    --text-dim: #6b6b80;
+    --text-muted: #3a3a4d;
+    --green: #00e87b;
+    --green-dim: rgba(0,232,123,0.08);
+    --green-glow: rgba(0,232,123,0.25);
+    --red: #ff3b5c;
+    --red-dim: rgba(255,59,92,0.08);
+    --red-glow: rgba(255,59,92,0.25);
+    --yellow: #ffc233;
+    --accent: #7c5cfc;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Outfit', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .grain {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px;
+  }
+
+  .container {
+    position: relative; z-index: 1;
+    max-width: 880px; margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  /* ── Header ── */
+  header {
+    margin-bottom: 56px;
+    animation: fadeUp 0.6s ease-out;
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green-glow), 0 0 4px var(--green);
+    transition: all 0.5s;
+  }
+
+  .logo-dot.degraded { background: var(--yellow); box-shadow: 0 0 12px rgba(255,194,51,0.25); }
+  .logo-dot.down { background: var(--red); box-shadow: 0 0 12px var(--red-glow), 0 0 4px var(--red); }
+
+  .logo h1 {
+    font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em;
+  }
+
+  .overall-status {
+    font-size: 0.85rem; font-weight: 400; color: var(--text-dim);
+    font-family: var(--mono); letter-spacing: 0.01em;
+  }
+
+  .overall-status span { color: var(--green); font-weight: 500; }
+  .overall-status span.degraded { color: var(--yellow); }
+  .overall-status span.down { color: var(--red); }
+
+  /* ── Service Cards ── */
+  .services {
+    display: flex; flex-direction: column; gap: 2px;
+    margin-bottom: 56px;
+  }
+
+  .service {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 16px;
+    transition: background 0.2s;
+    animation: fadeUp 0.6s ease-out both;
+  }
+
+  .service:first-child { border-radius: 12px 12px 0 0; }
+  .service:last-child { border-radius: 0 0 12px 12px; }
+  .service:hover { background: var(--surface-2); }
+
+  .service-left { display: flex; flex-direction: column; gap: 6px; }
+
+  .service-name {
+    font-size: 0.95rem; font-weight: 500; letter-spacing: -0.01em;
+  }
+
+  .service-meta {
+    font-family: var(--mono); font-size: 0.72rem;
+    color: var(--text-dim); letter-spacing: 0.02em;
+  }
+
+  .service-right {
+    display: flex; align-items: center; gap: 16px;
+  }
+
+  .latency {
+    font-family: var(--mono); font-size: 0.78rem;
+    color: var(--text-dim); text-align: right;
+    min-width: 70px;
+  }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 100px;
+    font-family: var(--mono); font-size: 0.72rem;
+    font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase;
+  }
+
+  .status-pill.up {
+    background: var(--green-dim); color: var(--green);
+    border: 1px solid rgba(0,232,123,0.15);
+  }
+
+  .status-pill.down {
+    background: var(--red-dim); color: var(--red);
+    border: 1px solid rgba(255,59,92,0.15);
+  }
+
+  .status-pill .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* ── Uptime Timeline ── */
+  .section-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 0.82rem; font-weight: 500; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  .section-subtitle {
+    font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted);
+  }
+
+  .timeline-section {
+    margin-bottom: 48px;
+    animation: fadeUp 0.6s ease-out 0.2s both;
+  }
+
+  .timeline-row {
+    margin-bottom: 20px;
+  }
+
+  .timeline-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 8px;
+  }
+
+  .timeline-service {
+    font-size: 0.82rem; font-weight: 500;
+  }
+
+  .timeline-uptime {
+    font-family: var(--mono); font-size: 0.78rem;
+  }
+
+  .timeline-uptime.good { color: var(--green); }
+  .timeline-uptime.warn { color: var(--yellow); }
+  .timeline-uptime.bad { color: var(--red); }
+
+  .timeline-bar {
+    display: flex; gap: 2px; height: 32px;
+    border-radius: 4px; overflow: hidden;
+  }
+
+  .timeline-bar .tick {
+    flex: 1; border-radius: 2px;
+    transition: transform 0.15s, opacity 0.15s;
+    position: relative;
+    cursor: default;
+  }
+
+  .timeline-bar .tick.up { background: var(--green); opacity: 0.6; }
+  .timeline-bar .tick.up:hover { opacity: 1; transform: scaleY(1.15); }
+  .timeline-bar .tick.down { background: var(--red); opacity: 0.85; }
+  .timeline-bar .tick.down:hover { opacity: 1; transform: scaleY(1.15); }
+  .timeline-bar .tick.empty { background: var(--surface-2); opacity: 0.5; }
+
+  .timeline-range {
+    display: flex; justify-content: space-between;
+    margin-top: 6px;
+    font-family: var(--mono); font-size: 0.65rem; color: var(--text-muted);
+  }
+
+  /* ── Incidents ── */
+  .incidents-section {
+    animation: fadeUp 0.6s ease-out 0.35s both;
+  }
+
+  .incident-list {
+    display: flex; flex-direction: column; gap: 1px;
+  }
+
+  .incident {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .incident:first-child { border-radius: 12px 12px 0 0; }
+  .incident:last-child { border-radius: 0 0 12px 12px; }
+  .incident:only-child { border-radius: 12px; }
+
+  .incident-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+  }
+
+  .incident-info {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+
+  .incident-service {
+    font-size: 0.85rem; font-weight: 500;
+  }
+
+  .incident-error {
+    font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 480px;
+  }
+
+  .incident-time {
+    font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .no-incidents {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 64px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--text-muted);
+    animation: fadeUp 0.6s ease-out 0.45s both;
+  }
+
+  footer a { color: var(--text-dim); text-decoration: none; }
+  footer a:hover { color: var(--text); }
+
+  .refresh-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px;
+    min-height: 300px; color: var(--text-dim);
+    font-family: var(--mono); font-size: 0.82rem;
+  }
+
+  .spinner {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .container { padding: 40px 16px 60px; }
+    .service { padding: 16px; grid-template-columns: 1fr; gap: 12px; }
+    .service-right { justify-content: flex-start; }
+    .incident { grid-template-columns: auto 1fr; }
+    .incident-time { grid-column: 2; }
+    .incident-error { max-width: 260px; }
+    footer { flex-direction: column; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grain"></div>
+
+<div class="container">
+  <div id="app">
+    <div class="loading">
+      <div class="spinner"></div>
+      fetching status...
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://fbtndmrbruifjdeaydjh.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZidG5kbXJicnVpZmpkZWF5ZGpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzOTUsImV4cCI6MjA5MTg2MDM5NX0.n2tlq1Vbq4RqVKVHLHCY_OykV5Sq3bCP_GOxrUKHvu8';
+
+const SERVICES = [
+  { key: 'reachability', name: 'API Reachability', desc: 'get_server_capabilities()' },
+  { key: 'sampling', name: 'Sampling Pipeline', desc: 'Llama-3.2-1B inference' },
+  { key: 'openai_compatible', name: 'OpenAI-Compatible', desc: '/v1/completions endpoint' },
+  { key: 'training_infra', name: 'Training Infrastructure', desc: 'LoRA training client' },
+];
+
+const TICKS = 72;
+
+async function query(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { 'apikey': SUPABASE_ANON, 'Authorization': `Bearer ${SUPABASE_ANON}` }
+  });
+  return res.json();
+}
+
+async function fetchLatest() {
+  const rows = await query(
+    'check_results?order=checked_at.desc,service&limit=100'
+  );
+
+  const latest = {};
+  for (const row of rows) {
+    if (!latest[row.service]) latest[row.service] = row;
+  }
+  return latest;
+}
+
+async function fetchHistory(hours = 24) {
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  return query(
+    `check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at`
+  );
+}
+
+async function fetchRecentIncidents() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  return query(
+    `check_results?status=eq.down&checked_at=gte.${since}&order=checked_at.desc&limit=20&select=service,error,checked_at`
+  );
+}
+
+function buildTicks(historyRows, serviceKey) {
+  const svcRows = historyRows.filter(r => r.service === serviceKey);
+  if (svcRows.length === 0) return Array(TICKS).fill('empty');
+
+  const now = Date.now();
+  const start = now - 24 * 60 * 60 * 1000;
+  const bucketMs = (now - start) / TICKS;
+  const ticks = Array(TICKS).fill('empty');
+
+  for (const row of svcRows) {
+    const t = new Date(row.checked_at).getTime();
+    const idx = Math.min(Math.floor((t - start) / bucketMs), TICKS - 1);
+    if (idx < 0) continue;
+    if (ticks[idx] === 'empty' || row.status === 'down') {
+      ticks[idx] = row.status;
+    }
+  }
+  return ticks;
+}
+
+function calcUptime(historyRows, serviceKey) {
+  const svcRows = historyRows.filter(r => r.service === serviceKey);
+  if (svcRows.length === 0) return null;
+  const up = svcRows.filter(r => r.status === 'up').length;
+  return ((up / svcRows.length) * 100).toFixed(2);
+}
+
+function uptimeClass(pct) {
+  if (pct === null) return '';
+  if (pct >= 99.5) return 'good';
+  if (pct >= 95) return 'warn';
+  return 'bad';
+}
+
+function timeAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+
+function fmtLatency(ms) {
+  if (ms == null) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function overallStatus(latest) {
+  const statuses = SERVICES.map(s => latest[s.key]?.status);
+  if (statuses.every(s => s === 'up')) return { text: 'All systems operational', cls: '' };
+  if (statuses.every(s => s === 'down' || !s)) return { text: 'Major outage', cls: 'down' };
+  return { text: 'Partial degradation', cls: 'degraded' };
+}
+
+function render(latest, history, incidents) {
+  const overall = overallStatus(latest);
+
+  let html = `
+    <header>
+      <div class="logo">
+        <div class="logo-dot ${overall.cls}"></div>
+        <h1>Tinker Status</h1>
+      </div>
+      <div class="overall-status"><span class="${overall.cls}">${overall.text}</span></div>
+    </header>
+
+    <div class="services">
+      ${SERVICES.map((svc, i) => {
+        const data = latest[svc.key];
+        const status = data?.status || 'down';
+        return `
+          <div class="service" style="animation-delay: ${i * 0.06}s">
+            <div class="service-left">
+              <div class="service-name">${svc.name}</div>
+              <div class="service-meta">${svc.desc}</div>
+            </div>
+            <div class="service-right">
+              <div class="latency">${fmtLatency(data?.latency_ms)}</div>
+              <div class="status-pill ${status}">
+                <span class="dot"></span>${status}
+              </div>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+
+    <div class="timeline-section">
+      <div class="section-header">
+        <div class="section-title">Uptime — Last 24 Hours</div>
+        <div class="section-subtitle">${TICKS} intervals, 20 min each</div>
+      </div>
+      ${SERVICES.map(svc => {
+        const ticks = buildTicks(history, svc.key);
+        const uptime = calcUptime(history, svc.key);
+        const uptimeStr = uptime !== null ? `${uptime}%` : 'No data';
+        return `
+          <div class="timeline-row">
+            <div class="timeline-label">
+              <div class="timeline-service">${svc.name}</div>
+              <div class="timeline-uptime ${uptimeClass(uptime)}">${uptimeStr}</div>
+            </div>
+            <div class="timeline-bar">
+              ${ticks.map(t => `<div class="tick ${t}"></div>`).join('')}
+            </div>
+          </div>`;
+      }).join('')}
+      <div class="timeline-range">
+        <span>24h ago</span>
+        <span>now</span>
+      </div>
+    </div>
+
+    <div class="incidents-section">
+      <div class="section-header">
+        <div class="section-title">Recent Incidents — 24h</div>
+        <div class="section-subtitle">${incidents.length} event${incidents.length !== 1 ? 's' : ''}</div>
+      </div>
+      ${incidents.length === 0
+        ? '<div class="no-incidents">No incidents in the last 24 hours</div>'
+        : `<div class="incident-list">${incidents.map(inc => {
+            const svc = SERVICES.find(s => s.key === inc.service);
+            return `
+              <div class="incident">
+                <div class="incident-dot"></div>
+                <div class="incident-info">
+                  <div class="incident-service">${svc?.name || inc.service}</div>
+                  <div class="incident-error">${inc.error || 'Unknown error'}</div>
+                </div>
+                <div class="incident-time">${timeAgo(inc.checked_at)}</div>
+              </div>`;
+          }).join('')}</div>`
+      }
+    </div>
+
+    <footer>
+      <div>
+        <span class="refresh-dot"></span>
+        auto-refreshes every 60s
+      </div>
+      <a href="https://github.com/lokashrinav/tinker-status" target="_blank">github.com/lokashrinav/tinker-status</a>
+    </footer>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+async function load() {
+  try {
+    const [latest, history, incidents] = await Promise.all([
+      fetchLatest(), fetchHistory(24), fetchRecentIncidents()
+    ]);
+    render(latest, history, incidents);
+  } catch (e) {
+    document.getElementById('app').innerHTML = `
+      <div class="loading" style="color: var(--red)">
+        Failed to fetch status: ${e.message}
+      </div>`;
+  }
+}
+
+load();
+setInterval(load, 60_000);
+</script>
+
+</body>
+</html>
