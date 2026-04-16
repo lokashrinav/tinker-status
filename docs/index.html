@@ -403,7 +403,7 @@ const WINDOWS = [
   { key: '90d', label: '90d', hours: 2160 },
 ];
 
-const TICKS = 72;
+const TICKS = 24;
 let allData = null;
 let activeWindow = '90d';
 
@@ -564,7 +564,7 @@ function render() {
     <div class="bar-section">
       <div class="section-head">
         <div class="section-title">Last 24 hours</div>
-        <div class="section-sub">Updated every 10 min</div>
+        <div class="section-sub">1 bar per hour</div>
       </div>
       ${SVCS.map(s => {
         const tk = buildTicks(rows24h, s.key);
