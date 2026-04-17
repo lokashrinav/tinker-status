@@ -355,6 +355,7 @@
   .tab:hover:not(.active) { color: var(--text); }
 
   @media (max-width: 600px) {
+    .ink-blob { display: none; }
     .container { padding: 48px 16px 64px; }
     h1 { font-size: 1.6rem; }
     .service { flex-wrap: wrap; gap: 8px; }
@@ -362,7 +363,7 @@
     .uptime-table th, .uptime-table td { padding-left: 10px; }
     .incident { flex-wrap: wrap; }
     .overall { flex-wrap: wrap; }
-    .overall .ts { margin-left: 16px; }
+    .overall .ts { margin-left: 0; width: 100%; }
   }
 </style>
 </head>
