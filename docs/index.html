@@ -355,7 +355,12 @@
   .tab:hover:not(.active) { color: var(--text); }
 
   @media (max-width: 600px) {
-    .ink-blob { display: none; }
+    .ink-blob {
+      top: -760px;
+      left: -760px;
+      width: 1520px;
+      height: 1520px;
+    }
     .container { padding: 48px 16px 64px; }
     h1 { font-size: 1.6rem; }
     .service { flex-wrap: wrap; gap: 8px; }
