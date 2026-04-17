@@ -45,7 +45,11 @@
     height: 1100px;
     pointer-events: none;
     z-index: 0;
+    opacity: 0;
+    transition: opacity 0.3s;
   }
+
+  .ink-blob.visible { opacity: 1; }
 
   .container {
     position: relative;
@@ -669,6 +673,7 @@ async function load() {
   try {
     allData = await fetchAll();
     render();
+    document.querySelector('.ink-blob')?.classList.add('visible');
   } catch (e) {
     document.getElementById('app').innerHTML =
       `<div class="loading" style="color:var(--red)">Failed to load: ${e.message}</div>`;
