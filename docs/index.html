@@ -31,12 +31,32 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  html {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
   body {
     background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    max-width: 100%;
+    position: relative;
+  }
+
+  /* Clip decorative SVG so it cannot widen the document (mobile horizontal scroll). */
+  .ink-blob-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: min(360px, 50vh);
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
   }
 
   .ink-blob {
@@ -46,7 +66,6 @@
     width: 1100px;
     height: 1100px;
     pointer-events: none;
-    z-index: 0;
     opacity: 0;
     transition: none;
   }
@@ -57,6 +76,7 @@
     position: relative;
     z-index: 1;
     max-width: 720px;
+    width: 100%;
     margin: 0 auto;
     padding: 80px 24px 100px;
   }
@@ -356,15 +376,18 @@
 
   @media (max-width: 600px) {
     .service { flex-wrap: wrap; gap: 8px; }
-    .uptime-table { font-size: 0.75rem; }
-    .uptime-table th, .uptime-table td { padding-left: 10px; }
+    .service-name { min-width: 0; overflow-wrap: anywhere; }
+    .uptime-table { font-size: 0.75rem; table-layout: fixed; }
+    .uptime-table th, .uptime-table td { padding-left: 10px; word-break: break-word; }
     .incident { flex-wrap: wrap; }
     .overall { flex-wrap: wrap; }
+    .tabs { flex-wrap: wrap; row-gap: 8px; }
   }
 </style>
 </head>
 <body>
 
+<div class="ink-blob-wrap" aria-hidden="true">
 <svg class="ink-blob" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
   <path fill="#000" d="M200,120 C210,100 225,85 240,80 C250,77 255,82 252,90 C248,100 235,108 230,115
     C260,95 280,78 295,72 C305,68 312,74 308,84 C302,98 280,112 265,122
@@ -384,6 +407,7 @@
   <ellipse fill="#000" cx="278" cy="218" rx="6" ry="5"/>
   <ellipse fill="#000" cx="165" cy="225" rx="5" ry="4"/>
 </svg>
+</div>
 
 <div class="container">
   <div id="app">
