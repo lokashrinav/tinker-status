@@ -37,8 +37,12 @@ Use any service that can send a `POST` on an interval (many people use [cron-job
    - **Header:** `Accept: application/vnd.github+json`
    - **Header:** `X-GitHub-Api-Version: 2022-11-28` (optional but good practice)
    - **Body (JSON):** `{"ref":"main"}` (use your default branch name if not `main`)
+   - **Header:** `Content-Type: application/json` (required when sending a JSON body)
 
 3. Store the PAT only in the cron provider’s secret field, not in the repo.
+
+**Troubleshooting:** If you see **404** from GitHub, the request is almost always **GET** instead of **POST**. The dispatch URL does not support GET; cron-job.org must use **POST** with the JSON body (see their FAQ: custom HTTP methods). Use workflow id `261565601` in the URL if `check.yml` in the path misbehaves:  
+`https://api.github.com/repos/lokashrinav/tinker-status/actions/workflows/261565601/dispatches`
 
 **Option B — Manual**  
 In GitHub: **Actions → Tinker Health Check → Run workflow**.
