@@ -1,9 +1,10 @@
 name: Tinker Health Check
 
+# Runs are triggered by workflow_dispatch only. GitHub's schedule cron is unreliable on
+# free tier (delays/skips). Use an external HTTP cron (e.g. cron-job.org) POSTing to the
+# dispatch API — see README "Scheduling".
 on:
-  schedule:
-    - cron: "*/10 * * * *"
-  workflow_dispatch:  # manual trigger for testing
+  workflow_dispatch:
 
 jobs:
   check:

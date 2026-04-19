@@ -6,7 +6,7 @@ Uptime monitor for the [Tinker](https://thinkingmachines.ai/tinker) API. I got t
 
 ## What it checks
 
-Every 10 minutes, four things get hit independently:
+On each run (see **Scheduling** below), four things get hit independently:
 
 - **API reachability** calls `get_server_capabilities()`. Cheapest call. If this fails, everything else is skipped.
 - **Inference** sends `"2+2="` to Llama-3.2-1B via `sample_async()`. Tests the whole inference pipeline, not just a ping.
@@ -17,11 +17,37 @@ Every 10 minutes, four things get hit independently:
 
 ## How it works
 
-GitHub Actions runs `check.py` on a cron schedule. The script hits the Tinker SDK and writes results to a Supabase Postgres table. The status page is a static HTML file on GitHub Pages that reads from Supabase using the anon key (read only, RLS enforced). No servers, no backend, everything on free tiers.
+GitHub Actions runs `check.py` when the workflow is triggered. The script hits the Tinker SDK and writes results to a Supabase Postgres table. The status page is a static HTML file on GitHub Pages that reads from Supabase using the anon key (read only, RLS enforced). No servers, no backend, everything on free tiers.
+
+## Scheduling
+
+This repo does **not** use GitHub’s `schedule` trigger: on the free tier it often runs late or skips runs. Instead, trigger the workflow on a timer you control.
+
+**Until you configure Option A below, checks only run when you trigger the workflow manually** (Actions → Run workflow).
+
+**Option A — External HTTP cron (recommended, $0)**  
+Use any service that can send a `POST` on an interval (many people use [cron-job.org](https://cron-job.org); it’s an established, donation-funded scheduler with an open-source history—use only if you’re comfortable with their terms).
+
+1. Create a **classic** personal access token with the **`workflow`** scope (or a **fine-grained** token for this repo only with **Actions: Read and write**).
+2. Add a scheduled **HTTPS** job that runs every 5–10 minutes:
+
+   - **URL:** `https://api.github.com/repos/<OWNER>/<REPO>/actions/workflows/check.yml/dispatches`
+   - **Method:** `POST`
+   - **Header:** `Authorization: Bearer <YOUR_PAT>`
+   - **Header:** `Accept: application/vnd.github+json`
+   - **Header:** `X-GitHub-Api-Version: 2022-11-28` (optional but good practice)
+   - **Body (JSON):** `{"ref":"main"}` (use your default branch name if not `main`)
+
+3. Store the PAT only in the cron provider’s secret field, not in the repo.
+
+**Option B — Manual**  
+In GitHub: **Actions → Tinker Health Check → Run workflow**.
+
+After you set Option A up, runs stay on a steady interval; the status page’s 24h bars still aggregate hourly.
 
 ## Stuff that's broken or not great
 
-- GitHub Actions cron drifts. `*/10 * * * *` really means "roughly every 10 minutes, sometimes 30." If you need real monitoring, use a real monitoring tool.
+- If GitHub Actions is down, checks won’t run and the page can look stale—same as any GH-hosted monitor.
 - One check location (GitHub's runners, somewhere in the US). Regional outages won't show up.
 - Training check is shallow. Client init works does not mean the training loop works.
 - The OpenAI endpoint URL is hardcoded. If Tinker moves it, this will throw false red until I notice.
@@ -41,4 +67,4 @@ Run `supabase_schema.sql` in the Supabase SQL Editor. RLS is on so the anon key 
 
 ## Cost
 
-GitHub Actions is free. Supabase free tier handles the ~576 rows/day easily. Tinker usage is negligible at this check frequency.
+GitHub Actions is free within limits. Supabase free tier is plenty for frequent checks. Tinker usage stays small because the training step only creates a LoRA client (no full training loop).
