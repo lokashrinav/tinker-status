@@ -436,8 +436,8 @@ const WINDOWS = [
   { key: '90d', label: '90d', hours: 2160 },
 ];
 
-/* One slot per CHECK_INTERVAL_MIN minutes over 24h (cron every 5 min → 288 bars). */
-const CHECK_INTERVAL_MIN = 5;
+/* One slot per CHECK_INTERVAL_MIN minutes over 24h (must match your cron cadence). */
+const CHECK_INTERVAL_MIN = 10;
 const TICKS = (24 * 60) / CHECK_INTERVAL_MIN;
 let allData = null;
 let activeWindow = '90d';
