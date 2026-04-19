@@ -224,7 +224,7 @@
 
   .bar {
     display: flex;
-    gap: 1.5px;
+    gap: 0;
     height: 24px;
   }
 
@@ -436,7 +436,9 @@ const WINDOWS = [
   { key: '90d', label: '90d', hours: 2160 },
 ];
 
-const TICKS = 24;
+/* One slot per CHECK_INTERVAL_MIN minutes over 24h (cron every 5 min → 288 bars). */
+const CHECK_INTERVAL_MIN = 5;
+const TICKS = (24 * 60) / CHECK_INTERVAL_MIN;
 let allData = null;
 let activeWindow = '90d';
 
@@ -528,6 +530,7 @@ function buildIncidents(rows, hours) {
 
   for (const r of filtered) {
     const t = new Date(r.checked_at).getTime();
+    /* Merge outage rows within 25m (covers brief flakes between 5-min checks). */
     if (current && current.service === r.service && t - current.lastSeen < 25 * 60 * 1000) {
       current.lastSeen = t;
       current.count++;
@@ -597,7 +600,7 @@ function render() {
     <div class="bar-section">
       <div class="section-head">
         <div class="section-title">Last 24 hours</div>
-        <div class="section-sub">1 bar per hour</div>
+        <div class="section-sub">1 bar per ${CHECK_INTERVAL_MIN} min (${TICKS} slots / 24h)</div>
       </div>
       ${SVCS.map(s => {
         const tk = buildTicks(rows24h, s.key);
@@ -638,7 +641,7 @@ function render() {
         <div class="section-title">Response time</div>
         <div class="section-sub">${win.label} window</div>
       </div>
-      <p class="latency-note">Measured from a single GitHub Actions runner. Useful as a trend, not an absolute benchmark.</p>
+      <p class="latency-note">Checks about every ${CHECK_INTERVAL_MIN} min from one GitHub Actions runner. Latency is a trend, not a benchmark.</p>
       <div class="tabs">
         ${WINDOWS.map(w =>
           `<button class="tab ${w.key === activeWindow ? 'active' : ''}" onclick="setWindow('${w.key}')">${w.label}</button>`

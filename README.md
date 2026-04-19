@@ -47,7 +47,7 @@ Use any service that can send a `POST` on an interval (many people use [cron-job
 **Option B — Manual**  
 In GitHub: **Actions → Tinker Health Check → Run workflow**.
 
-After you set Option A up, runs stay on a steady interval; the status page’s 24h bars still aggregate hourly.
+After you set Option A up, runs stay on a steady interval. The status page’s **Last 24 hours** strip uses one bar per interval (e.g. every 5 min → 288 slots).
 
 ## Stuff that's broken or not great
 
