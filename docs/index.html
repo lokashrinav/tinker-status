@@ -571,6 +571,7 @@ function render() {
   const { rows, latest } = allData;
   const win = WINDOWS.find(w => w.key === activeWindow);
   const winRows = filterByWindow(rows, win.hours);
+  const allRows90d = filterByWindow(rows, 2160);
 
   const sts = SVCS.map(s => latest[s.key]?.status);
   const allUp = sts.every(s => s === 'up');
@@ -581,7 +582,7 @@ function render() {
   const lastCheck = latest[SVCS[0].key]?.checked_at;
   const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
 
-  const incidents = buildIncidents(rows, win.hours);
+  const incidents = buildIncidents(rows, 2160);
 
   document.getElementById('app').innerHTML = `
     <header>
@@ -649,7 +650,7 @@ function render() {
     <div class="latency-section">
       <div class="section-head">
         <div class="section-title">Response time</div>
-        <div class="section-sub">${win.label} window</div>
+        <div class="section-sub">90d window</div>
       </div>
       <p class="latency-note">Checks about every ${CHECK_INTERVAL_MIN} min from one GitHub Actions runner. Latency is a trend, not a benchmark.</p>
       <table class="uptime-table">
@@ -658,7 +659,7 @@ function render() {
         </tr></thead>
         <tbody>
           ${SVCS.map(s => {
-            const l = calcLatency(winRows, s.key, win.hours);
+            const l = calcLatency(allRows90d, s.key, 2160);
             return `<tr>
               <td>${s.name}</td>
               <td>${fmtMs(l.p50)}</td>
@@ -673,10 +674,10 @@ function render() {
     <div class="incidents-section">
       <div class="section-head">
         <div class="section-title">Incidents</div>
-        <div class="section-sub">${win.label} window</div>
+        <div class="section-sub">90d window</div>
       </div>
       ${incidents.length === 0
-        ? `<div class="no-incidents">No incidents in the last ${win.label}.</div>`
+        ? `<div class="no-incidents">No incidents in the last 90d.</div>`
         : incidents.map(inc => {
             const svc = SVCS.find(s => s.key === inc.service);
             const dur = fmtDuration(inc.lastSeen - inc.start);
