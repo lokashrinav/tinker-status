@@ -436,9 +436,12 @@ const WINDOWS = [
   { key: '90d', label: '90d', hours: 2160 },
 ];
 
-/* One slot per CHECK_INTERVAL_MIN minutes over 24h (must match your cron cadence). */
+/* Must match your external cron cadence (minutes between checks). */
 const CHECK_INTERVAL_MIN = 10;
-const TICKS = (24 * 60) / CHECK_INTERVAL_MIN;
+/* Merge gap for incidents — two consecutive failures farther apart than this
+   are treated as separate incidents.  Set to ~2.5× the cron interval so a
+   single skipped run doesn't split one outage into two. */
+const INCIDENT_MERGE_MS = CHECK_INTERVAL_MIN * 2.5 * 60 * 1000;
 let allData = null;
 let activeWindow = '90d';
 
@@ -510,13 +513,17 @@ function calcLatency(rows, key, windowHours) {
   };
 }
 
-function buildTicks(rows24h, key) {
-  const svc = rows24h.filter(r => r.service === key);
-  if (!svc.length) return Array(TICKS).fill('empty');
-  const now = Date.now(), start = now - 24 * 3600 * 1000, bkt = (now - start) / TICKS;
-  const t = Array(TICKS).fill('empty');
+const MAX_BAR_SLOTS = 144;
+
+function buildTicks(windowRows, key, windowHours) {
+  const svc = windowRows.filter(r => r.service === key);
+  const rawTicks = Math.round((windowHours * 60) / CHECK_INTERVAL_MIN);
+  const ticks = Math.min(rawTicks, MAX_BAR_SLOTS);
+  if (!svc.length) return Array(ticks).fill('empty');
+  const now = Date.now(), start = now - windowHours * 3600 * 1000, bkt = (now - start) / ticks;
+  const t = Array(ticks).fill('empty');
   for (const r of svc) {
-    const i = Math.min(Math.floor((new Date(r.checked_at).getTime() - start) / bkt), TICKS - 1);
+    const i = Math.min(Math.floor((new Date(r.checked_at).getTime() - start) / bkt), ticks - 1);
     if (i < 0) continue;
     if (t[i] === 'empty' || r.status === 'down') t[i] = r.status;
   }
@@ -530,8 +537,7 @@ function buildIncidents(rows, hours) {
 
   for (const r of filtered) {
     const t = new Date(r.checked_at).getTime();
-    /* Merge outage rows within 25m (covers brief flakes between 5-min checks). */
-    if (current && current.service === r.service && t - current.lastSeen < 25 * 60 * 1000) {
+    if (current && current.service === r.service && t - current.lastSeen < INCIDENT_MERGE_MS) {
       current.lastSeen = t;
       current.count++;
     } else {
@@ -565,7 +571,6 @@ function render() {
   const { rows, latest } = allData;
   const win = WINDOWS.find(w => w.key === activeWindow);
   const winRows = filterByWindow(rows, win.hours);
-  const rows24h = filterByWindow(rows, 24);
 
   const sts = SVCS.map(s => latest[s.key]?.status);
   const allUp = sts.every(s => s === 'up');
@@ -599,12 +604,17 @@ function render() {
 
     <div class="bar-section">
       <div class="section-head">
-        <div class="section-title">Last 24 hours</div>
-        <div class="section-sub">1 bar per ${CHECK_INTERVAL_MIN} min (${TICKS} slots / 24h)</div>
+        <div class="section-title">Last ${win.label}</div>
+        <div class="section-sub">1 bar per ${CHECK_INTERVAL_MIN} min</div>
+      </div>
+      <div class="tabs">
+        ${WINDOWS.map(w =>
+          `<button class="tab ${w.key === activeWindow ? 'active' : ''}" onclick="setWindow('${w.key}')">${w.label}</button>`
+        ).join('')}
       </div>
       ${SVCS.map(s => {
-        const tk = buildTicks(rows24h, s.key);
-        const u = calcUptime(rows24h, s.key, 24);
+        const tk = buildTicks(winRows, s.key, win.hours);
+        const u = calcUptime(winRows, s.key, win.hours);
         return `<div class="bar-row">
           <div class="bar-label">
             <span class="bar-name">${s.name}</span>
@@ -613,7 +623,7 @@ function render() {
           <div class="bar">${tk.map(t => `<div class="t ${t}"></div>`).join('')}</div>
         </div>`;
       }).join('')}
-      <div class="bar-range"><span>24h ago</span><span>now</span></div>
+      <div class="bar-range"><span>${win.label} ago</span><span>now</span></div>
     </div>
 
     <div class="uptime-section">
@@ -642,11 +652,6 @@ function render() {
         <div class="section-sub">${win.label} window</div>
       </div>
       <p class="latency-note">Checks about every ${CHECK_INTERVAL_MIN} min from one GitHub Actions runner. Latency is a trend, not a benchmark.</p>
-      <div class="tabs">
-        ${WINDOWS.map(w =>
-          `<button class="tab ${w.key === activeWindow ? 'active' : ''}" onclick="setWindow('${w.key}')">${w.label}</button>`
-        ).join('')}
-      </div>
       <table class="uptime-table">
         <thead><tr>
           <th></th><th>p50</th><th>p95</th><th>p99</th>
