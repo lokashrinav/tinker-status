@@ -477,7 +477,7 @@ function calcUptime(rows, key, windowHours) {
     const earliest = new Date(s[0].checked_at).getTime();
     const span = Date.now() - earliest;
     const windowMs = windowHours * 3600 * 1000;
-    if (span < windowMs * 0.5) return null;
+    if (span < windowMs * 0.9) return null;
   }
   return (s.filter(r => r.status === 'up').length / s.length) * 100;
 }
@@ -503,7 +503,7 @@ function calcLatency(rows, key, windowHours) {
   if (windowHours && svc.length) {
     const earliest = new Date(svc[0].checked_at).getTime();
     const span = Date.now() - earliest;
-    if (span < windowHours * 3600 * 1000 * 0.5) return { p50: null, p95: null, p99: null };
+    if (span < windowHours * 3600 * 1000 * 0.9) return { p50: null, p95: null, p99: null };
   }
   const vals = svc.map(r => r.latency_ms);
   return {
