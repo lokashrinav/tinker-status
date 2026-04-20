@@ -443,7 +443,7 @@ const CHECK_INTERVAL_MIN = 10;
    single skipped run doesn't split one outage into two. */
 const INCIDENT_MERGE_MS = CHECK_INTERVAL_MIN * 2.5 * 60 * 1000;
 let allData = null;
-let activeWindow = '7d';
+let activeWindow = '24h';
 
 async function q(path) {
   const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
