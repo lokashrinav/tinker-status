@@ -230,9 +230,12 @@
 
   .bar .t {
     flex: 1;
-    border-radius: 2px;
+    min-width: 0;
+    border-radius: 0;
     transition: opacity 0.15s;
   }
+  .bar .t:first-child { border-radius: 3px 0 0 3px; }
+  .bar .t:last-child { border-radius: 0 3px 3px 0; }
   .bar .t.up { background: var(--green); opacity: 0.35; }
   .bar .t.up:hover { opacity: 0.7; }
   .bar .t.down { background: var(--red); opacity: 0.7; }
