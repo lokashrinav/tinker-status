@@ -381,18 +381,8 @@
   .tab:hover:not(.active) { color: var(--text); }
 
   @media (max-width: 600px) {
-    body::before {
-      content: '';
-      display: block;
-      position: fixed;
-      top: -100vh;
-      left: 0;
-      width: 100%;
-      height: 100vh;
-      background: #000;
-      z-index: 9999;
-      pointer-events: none;
-    }
+    html, body { background: #000; }
+    .page-wrap { background: var(--bg); }
     .service { flex-wrap: wrap; gap: 8px; }
     .service-name { min-width: 0; overflow-wrap: anywhere; }
     .uptime-table { font-size: 0.75rem; table-layout: fixed; }
@@ -404,6 +394,7 @@
 </style>
 </head>
 <body>
+<div class="page-wrap">
 
 <div class="ink-blob-wrap" aria-hidden="true">
 <svg class="ink-blob" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
@@ -663,6 +654,7 @@ async function load() {
 load();
 setInterval(load, 60000);
 </script>
+</div><!-- .page-wrap -->
 <script data-goatcounter="https://lokashrinav.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
 </body>
