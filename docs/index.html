@@ -458,7 +458,7 @@ async function q(path) {
 async function fetchAll() {
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const [rows, latest] = await Promise.all([
-    q(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error`),
+    q(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error&limit=60000`),
     q('check_results?order=checked_at.desc,service&limit=100'),
   ]);
 
