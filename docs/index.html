@@ -381,7 +381,18 @@
   .tab:hover:not(.active) { color: var(--text); }
 
   @media (max-width: 600px) {
-    html { background: #000; }
+    body::before {
+      content: '';
+      display: block;
+      position: fixed;
+      top: -100vh;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background: #000;
+      z-index: 9999;
+      pointer-events: none;
+    }
     .service { flex-wrap: wrap; gap: 8px; }
     .service-name { min-width: 0; overflow-wrap: anywhere; }
     .uptime-table { font-size: 0.75rem; table-layout: fixed; }
