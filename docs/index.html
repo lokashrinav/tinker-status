@@ -240,7 +240,7 @@
   .bar .t.up:hover { opacity: 0.7; }
   .bar .t.down { background: var(--red); opacity: 0.7; }
   .bar .t.down:hover { opacity: 1; }
-  .bar .t.empty { background: #f0f0f0; }
+  .bar .t.empty { background: var(--green); opacity: 0.08; }
 
   .bar-range {
     display: flex;
@@ -619,10 +619,13 @@ function render() {
       ${SVCS.map(s => {
         const tk = buildTicks(winRows, s.key, win.hours);
         const u = calcUptime(winRows, s.key, win.hours);
+        const filled = tk.filter(t => t !== 'empty').length;
+        const coverage = Math.round((filled / tk.length) * 100);
+        const coverageNote = coverage < 80 ? ` <span style="font-size:0.65rem;color:var(--text-3)">(${coverage}% coverage)</span>` : '';
         return `<div class="bar-row">
           <div class="bar-label">
             <span class="bar-name">${s.name}</span>
-            <span class="bar-pct ${pctCls(u)}">${pctStr(u)}</span>
+            <span class="bar-pct ${pctCls(u)}">${pctStr(u)}${coverageNote}</span>
           </div>
           <div class="bar">${tk.map(t => `<div class="t ${t}"></div>`).join('')}</div>
         </div>`;
