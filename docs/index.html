@@ -448,122 +448,39 @@ const INCIDENT_MERGE_MS = CHECK_INTERVAL_MIN * 2.5 * 60 * 1000;
 let allData = null;
 let activeWindow = '24h';
 
-async function q(path, headers = {}) {
-  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, ...headers }
+async function fetchSummary() {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/get_status_summary`, {
+    method: 'POST',
+    headers: {
+      apikey: SB_KEY,
+      Authorization: `Bearer ${SB_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ check_interval_min: CHECK_INTERVAL_MIN }),
   });
   return r.json();
-}
-
-async function qAll(basePath) {
-  const PAGE = 1000;
-  let offset = 0, all = [];
-  while (true) {
-    const page = await q(basePath + `&limit=${PAGE}&offset=${offset}`);
-    all = all.concat(page);
-    if (page.length < PAGE) break;
-    offset += PAGE;
-  }
-  return all;
-}
-
-async function fetchAll() {
-  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-  const [rows, latest] = await Promise.all([
-    qAll(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error`),
-    q('check_results?order=checked_at.desc,service&limit=100'),
-  ]);
-
-  const latestMap = {};
-  for (const r of latest) { if (!latestMap[r.service]) latestMap[r.service] = r; }
-
-  return { rows, latest: latestMap };
-}
-
-function filterByWindow(rows, hours) {
-  const cutoff = Date.now() - hours * 3600 * 1000;
-  return rows.filter(r => new Date(r.checked_at).getTime() >= cutoff);
-}
-
-function calcUptime(rows, key, windowHours) {
-  const s = rows.filter(r => r.service === key);
-  if (!s.length) return null;
-  if (windowHours) {
-    const earliest = new Date(s[0].checked_at).getTime();
-    const span = Date.now() - earliest;
-    const windowMs = windowHours * 3600 * 1000;
-    if (span < windowMs * 0.9) return null;
-  }
-  return (s.filter(r => r.status === 'up').length / s.length) * 100;
 }
 
 function pctStr(p) { return p === null ? '\u2014' : p.toFixed(2) + '%'; }
 function pctCls(p) { return p === null ? 'na' : p >= 99.5 ? 'good' : p >= 95 ? 'warn' : 'bad'; }
 
-function percentile(arr, p) {
-  if (!arr.length) return null;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const i = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, i)];
-}
-
 function fmtMs(ms) {
-  if (ms === null) return '\u2014';
+  if (ms === null || ms === undefined) return '\u2014';
   if (ms < 1000) return Math.round(ms) + 'ms';
   return (ms / 1000).toFixed(1) + 's';
 }
 
-function calcLatency(rows, key, windowHours) {
-  const svc = rows.filter(r => r.service === key && r.latency_ms != null);
-  if (windowHours && svc.length) {
-    const earliest = new Date(svc[0].checked_at).getTime();
-    const span = Date.now() - earliest;
-    if (span < windowHours * 3600 * 1000 * 0.9) return { p50: null, p95: null, p99: null };
-  }
-  const vals = svc.map(r => r.latency_ms);
-  return {
-    p50: percentile(vals, 50),
-    p95: percentile(vals, 95),
-    p99: percentile(vals, 99),
-  };
-}
-
-const MAX_BAR_SLOTS = 144;
-
-function buildTicks(windowRows, key, windowHours) {
-  const svc = windowRows.filter(r => r.service === key);
-  const rawTicks = Math.round((windowHours * 60) / CHECK_INTERVAL_MIN);
-  const ticks = Math.min(rawTicks, MAX_BAR_SLOTS);
-  if (!svc.length) return Array(ticks).fill('empty');
-  const now = Date.now(), start = now - windowHours * 3600 * 1000, bkt = (now - start) / ticks;
-  const t = Array(ticks).fill('empty');
-  for (const r of svc) {
-    const i = Math.min(Math.floor((new Date(r.checked_at).getTime() - start) / bkt), ticks - 1);
-    if (i < 0) continue;
-    if (t[i] === 'empty' || r.status === 'down') t[i] = r.status;
-  }
-  return t;
-}
-
-function buildIncidents(rows, hours) {
-  const filtered = filterByWindow(rows, hours).filter(r => r.status === 'down');
+function buildIncidents(downRows) {
   const incidents = [];
   let current = null;
-
-  for (const r of filtered) {
+  for (const r of downRows) {
     const t = new Date(r.checked_at).getTime();
     if (current && current.service === r.service && t - current.lastSeen < INCIDENT_MERGE_MS) {
       current.lastSeen = t;
       current.count++;
     } else {
       if (current) incidents.push(current);
-      current = {
-        service: r.service,
-        error: r.error,
-        start: t,
-        lastSeen: t,
-        count: 1,
-      };
+      current = { service: r.service, error: r.error, start: t, lastSeen: t, count: 1 };
     }
   }
   if (current) incidents.push(current);
@@ -583,10 +500,8 @@ function fmtTime(ts) {
 
 function render() {
   if (!allData) return;
-  const { rows, latest } = allData;
+  const { ticks, uptime, latency, latest, incidents: rawIncidents } = allData;
   const win = WINDOWS.find(w => w.key === activeWindow);
-  const winRows = filterByWindow(rows, win.hours);
-  const allRows90d = filterByWindow(rows, 2160);
 
   const sts = SVCS.map(s => latest[s.key]?.status);
   const allUp = sts.every(s => s === 'up');
@@ -597,7 +512,7 @@ function render() {
   const lastCheck = latest[SVCS[0].key]?.checked_at;
   const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
 
-  const incidents = buildIncidents(rows, 2160);
+  const incidents = buildIncidents(rawIncidents);
 
   document.getElementById('app').innerHTML = `
     <header>
@@ -629,10 +544,10 @@ function render() {
         ).join('')}
       </div>
       ${SVCS.map(s => {
-        const tk = buildTicks(winRows, s.key, win.hours);
-        const u = calcUptime(winRows, s.key, win.hours);
+        const tk = ticks[s.key]?.[win.key] || [];
+        const u = uptime[s.key]?.[win.key] ?? null;
         const filled = tk.filter(t => t !== 'empty').length;
-        const coverage = Math.round((filled / tk.length) * 100);
+        const coverage = tk.length ? Math.round((filled / tk.length) * 100) : 0;
         const coverageNote = coverage < 80 ? ` <span style="font-size:0.65rem;color:var(--text-3)">(${coverage}% coverage)</span>` : '';
         return `<div class="bar-row">
           <div class="bar-label">
@@ -657,7 +572,7 @@ function render() {
           ${SVCS.map(s => `<tr>
             <td>${s.name}</td>
             ${WINDOWS.map(w => {
-              const u = calcUptime(filterByWindow(rows, w.hours), s.key, w.hours);
+              const u = uptime[s.key]?.[w.key] ?? null;
               return `<td class="${pctCls(u)}">${pctStr(u)}</td>`;
             }).join('')}
           </tr>`).join('')}
@@ -677,7 +592,7 @@ function render() {
         </tr></thead>
         <tbody>
           ${SVCS.map(s => {
-            const l = calcLatency(allRows90d, s.key, 2160);
+            const l = latency[s.key] || {};
             return `<tr>
               <td>${s.name}</td>
               <td>${fmtMs(l.p50)}</td>
@@ -721,7 +636,7 @@ function setWindow(key) {
 
 async function load() {
   try {
-    allData = await fetchAll();
+    allData = await fetchSummary();
     render();
     document.querySelector('.ink-blob')?.classList.add('visible');
   } catch (e) {

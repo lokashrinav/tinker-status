@@ -65,7 +65,7 @@ Three GitHub secrets:
 | `SUPABASE_URL` | Supabase dashboard, Settings, API |
 | `SUPABASE_SERVICE_KEY` | Same page, the `service_role` key |
 
-Run `supabase_schema.sql` in the Supabase SQL Editor. RLS is on so the anon key can only read and the service key handles writes. Status page deploys from `/docs` via GitHub Pages.
+Run `supabase_schema.sql` then `supabase_functions.sql` in the Supabase SQL Editor. The schema creates the table with RLS (anon key = read-only, service key = writes). The function creates `get_status_summary()`, an RPC that aggregates all ticks, uptime, latency, and incidents server-side so the status page loads in a single request. Status page deploys from `/docs` via GitHub Pages.
 
 ## Cost
 
