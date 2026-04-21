@@ -448,17 +448,29 @@ const INCIDENT_MERGE_MS = CHECK_INTERVAL_MIN * 2.5 * 60 * 1000;
 let allData = null;
 let activeWindow = '24h';
 
-async function q(path) {
+async function q(path, headers = {}) {
   const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, ...headers }
   });
   return r.json();
+}
+
+async function qAll(basePath) {
+  const PAGE = 1000;
+  let offset = 0, all = [];
+  while (true) {
+    const page = await q(basePath + `&limit=${PAGE}&offset=${offset}`);
+    all = all.concat(page);
+    if (page.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
 }
 
 async function fetchAll() {
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const [rows, latest] = await Promise.all([
-    q(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error&limit=60000`),
+    qAll(`check_results?checked_at=gte.${since}&order=checked_at.asc&select=service,status,latency_ms,checked_at,error`),
     q('check_results?order=checked_at.desc,service&limit=100'),
   ]);
 
