@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#000000" media="(max-width: 600px)">
+<meta name="theme-color" content="#ffffff" media="(min-width: 601px)">
 <title>Tinker Status - Uptime Monitor for Tinker API by Thinking Machines Lab</title>
 <meta name="description" content="Independent uptime monitor for the Tinker training API by Thinking Machines Lab. Tracks API reachability, inference, OpenAI-compatible endpoint, and training infrastructure status.">
 <meta property="og:title" content="Tinker Status">
@@ -380,6 +381,7 @@
   .tab:hover:not(.active) { color: var(--text); }
 
   @media (max-width: 600px) {
+    html { background: #000; }
     .service { flex-wrap: wrap; gap: 8px; }
     .service-name { min-width: 0; overflow-wrap: anywhere; }
     .uptime-table { font-size: 0.75rem; table-layout: fixed; }
