@@ -21,11 +21,9 @@ GitHub Actions runs `check.py` when the workflow is triggered. The script hits t
 
 ## Scheduling
 
-This repo does **not** use GitHub’s `schedule` trigger: on the free tier it often runs late or skips runs. Instead, trigger the workflow on a timer you control.
+The workflow runs on a **GitHub `schedule` every 10 minutes** (UTC) so the status page can fill all 24h bar slots even if nothing else triggers it. GitHub may still delay or occasionally skip a scheduled run under load, so **Option A** remains a good backup.
 
-**Until you configure Option A below, checks only run when you trigger the workflow manually** (Actions → Run workflow).
-
-**Option A — External HTTP cron (recommended, $0)**  
+**Option A — External HTTP cron (optional backup, $0)**  
 Use any service that can send a `POST` on an interval (many people use [cron-job.org](https://cron-job.org); it’s an established, donation-funded scheduler with an open-source history—use only if you’re comfortable with their terms).
 
 1. Create a **classic** personal access token with the **`workflow`** scope (or a **fine-grained** token for this repo only with **Actions: Read and write**).
@@ -47,7 +45,7 @@ Use any service that can send a `POST` on an interval (many people use [cron-job
 **Option B — Manual**  
 In GitHub: **Actions → Tinker Health Check → Run workflow**.
 
-After you set Option A up, runs stay on a steady interval. The status page’s **Last 24 hours** strip uses one bar per interval (e.g. every 10 min → 144 slots).
+With the 10-minute schedule, the **Last 24 hours** strip can fill one bar per interval (144 slots). If you also use Option A, you may get two runs close together sometimes; that is harmless.
 
 ## Stuff that's broken or not great
 
