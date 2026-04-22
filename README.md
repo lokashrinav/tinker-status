@@ -6,54 +6,54 @@ Uptime monitor for the [Tinker](https://thinkingmachines.ai/tinker) API. I got t
 
 ## What it checks
 
-On each run (see **Scheduling** below), four things get hit independently:
+Every 10 minutes, four independent checks run:
 
-- **API reachability** calls `get_server_capabilities()`. Cheapest call. If this fails, everything else is skipped.
-- **Inference** sends `"2+2="` to Llama-3.2-1B via `sample_async()`. Tests the whole inference pipeline, not just a ping.
-- **OpenAI-compatible endpoint** hits `POST /v1/completions` against the [beta endpoint](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai). Different code path from the SDK, and a lot of people actually use this one.
-- **Training** calls `create_lora_training_client()` with rank 8. Doesn't actually run `forward_backward()` because doing that 144 times a day would cost real money. Just confirms the training infra will accept a client.
+| Check | What it does |
+|---|---|
+| **API** | `get_server_capabilities()` — cheapest call, gate for the rest |
+| **Inference** | Sends `"2+2="` to Llama-3.2-1B via `sample_async()` |
+| **OpenAI-compatible** | `POST /v1/completions` against the [beta endpoint](https://tinker-docs.thinkingmachines.ai/compatible-apis/openai) |
+| **Training** | `create_lora_training_client()` with rank 8 (init only, no actual training) |
 
-60s timeout on every call. Hangs count as down.
+60s timeout on every call. Hangs count as down. If API fails, the rest are skipped and marked down.
 
-## How it works
+## Architecture
 
-GitHub Actions runs `check.py` when the workflow is triggered. The script hits the Tinker SDK and writes results to a Supabase Postgres table. The status page is a static HTML file on GitHub Pages that reads from Supabase using the anon key (read only, RLS enforced). No servers, no backend, everything on free tiers.
+```
+GitHub Actions (cron */10)  →  check.py  →  Supabase Postgres
+                                                    ↓
+Static HTML on GitHub Pages  ←  get_status_summary() RPC (one call)
+```
+
+- **check.py** hits the Tinker SDK, writes rows to Supabase via the service key.
+- **get_status_summary()** is a Postgres function that aggregates ticks, uptime, latency percentiles, and incidents server-side.
+- **Status page** calls the RPC with the anon key (read-only, RLS enforced) and renders everything client-side. One HTTP request, no pagination.
+
+No servers, no backend beyond Supabase, everything on free tiers.
 
 ## Scheduling
 
-The workflow runs on a **GitHub `schedule` every 10 minutes** (UTC) so the status page can fill all 24h bar slots even if nothing else triggers it. GitHub may still delay or occasionally skip a scheduled run under load, so **Option A** remains a good backup.
+The workflow runs on GitHub's `schedule` trigger every 10 minutes. GitHub may occasionally delay or skip a run under load. An external HTTP cron (e.g. [cron-job.org](https://cron-job.org)) can serve as a backup — see the workflow dispatch setup below.
 
-**Option A — External HTTP cron (optional backup, $0)**  
-Use any service that can send a `POST` on an interval (many people use [cron-job.org](https://cron-job.org); it’s an established, donation-funded scheduler with an open-source history—use only if you’re comfortable with their terms).
+<details>
+<summary>Optional: external cron backup</summary>
 
-1. Create a **classic** personal access token with the **`workflow`** scope (or a **fine-grained** token for this repo only with **Actions: Read and write**).
-2. Add a scheduled **HTTPS** job that runs every 5–10 minutes:
-
+1. Create a PAT with the `workflow` scope.
+2. Set up a `POST` every 5–10 min:
    - **URL:** `https://api.github.com/repos/<OWNER>/<REPO>/actions/workflows/check.yml/dispatches`
-   - **Method:** `POST`
-   - **Header:** `Authorization: Bearer <YOUR_PAT>`
-   - **Header:** `Accept: application/vnd.github+json`
-   - **Header:** `X-GitHub-Api-Version: 2022-11-28` (optional but good practice)
-   - **Body (JSON):** `{"ref":"main"}` (use your default branch name if not `main`)
-   - **Header:** `Content-Type: application/json` (required when sending a JSON body)
+   - **Headers:** `Authorization: Bearer <PAT>`, `Accept: application/vnd.github+json`, `Content-Type: application/json`
+   - **Body:** `{"ref":"main"}`
+3. Store the PAT only in the cron provider's secret field.
 
-3. Store the PAT only in the cron provider’s secret field, not in the repo.
+If both schedule and external cron fire, you get a duplicate row — harmless.
+</details>
 
-**Troubleshooting:** If you see **404** from GitHub, the request is almost always **GET** instead of **POST**. The dispatch URL does not support GET; cron-job.org must use **POST** with the JSON body (see their FAQ: custom HTTP methods). Use workflow id `261565601` in the URL if `check.yml` in the path misbehaves:  
-`https://api.github.com/repos/lokashrinav/tinker-status/actions/workflows/261565601/dispatches`
+## Known limitations
 
-**Option B — Manual**  
-In GitHub: **Actions → Tinker Health Check → Run workflow**.
-
-With the 10-minute schedule, the **Last 24 hours** strip can fill one bar per interval (144 slots). If you also use Option A, you may get two runs close together sometimes; that is harmless.
-
-## Stuff that's broken or not great
-
-- If GitHub Actions is down, checks won’t run and the page can look stale—same as any GH-hosted monitor.
-- One check location (GitHub's runners, somewhere in the US). Regional outages won't show up.
-- Training check is shallow. Client init works does not mean the training loop works.
-- The OpenAI endpoint URL is hardcoded. If Tinker moves it, this will throw false red until I notice.
-- No alerting yet. You have to look at the page.
+- Single US-based check location (GitHub runners). Regional issues won't show.
+- Training check only confirms client init, not the full training pipeline.
+- OpenAI endpoint URL is hardcoded. If Tinker moves it, false red until updated.
+- No alerting — you have to look at the page.
 
 ## Fork it
 
@@ -62,11 +62,11 @@ Three GitHub secrets:
 | Secret | Where |
 |---|---|
 | `TINKER_API_KEY` | [Tinker Console](https://tinker-console.thinkingmachines.ai/) |
-| `SUPABASE_URL` | Supabase dashboard, Settings, API |
+| `SUPABASE_URL` | Supabase dashboard → Settings → API |
 | `SUPABASE_SERVICE_KEY` | Same page, the `service_role` key |
 
-Run `supabase_schema.sql` then `supabase_functions.sql` in the Supabase SQL Editor. The schema creates the table with RLS (anon key = read-only, service key = writes). The function creates `get_status_summary()`, an RPC that aggregates all ticks, uptime, latency, and incidents server-side so the status page loads in a single request. Status page deploys from `/docs` via GitHub Pages.
+Then in the Supabase SQL Editor, run `supabase_schema.sql` (table + RLS) then `supabase_functions.sql` (aggregation RPC). Deploy the status page from `/docs` via GitHub Pages.
 
 ## Cost
 
-GitHub Actions is free within limits. Supabase free tier is plenty for frequent checks. Tinker usage stays small because the training step only creates a LoRA client (no full training loop).
+Everything fits within free tiers: GitHub Actions, Supabase, GitHub Pages. Tinker usage is minimal — the training step only inits a LoRA client.
