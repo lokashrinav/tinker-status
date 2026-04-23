@@ -550,10 +550,12 @@ function render() {
         ).join('')}
       </div>
       ${SVCS.map(s => {
-        const tk = ticks[s.key]?.[win.key] || [];
+        let tk = ticks[s.key]?.[win.key] || [];
+        while (tk.length && tk[tk.length - 1] === 'empty') tk = tk.slice(0, -1);
         const u = uptime[s.key]?.[win.key] ?? null;
+        const totalSlots = ticks[s.key]?.[win.key]?.length || tk.length;
         const filled = tk.filter(t => t !== 'empty').length;
-        const coverage = tk.length ? Math.round((filled / tk.length) * 100) : 0;
+        const coverage = totalSlots ? Math.round((filled / totalSlots) * 100) : 0;
         const coverageNote = coverage < 80 ? ` <span style="font-size:0.65rem;color:var(--text-3)">(${coverage}% coverage)</span>` : '';
         return `<div class="bar-row">
           <div class="bar-label">
