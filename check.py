@@ -121,15 +121,22 @@ async def check_openai_compatible():
 async def check_training_client(service_client):
     try:
         start = time.time()
-        await with_timeout(
+        training_client = await with_timeout(
             service_client.create_lora_training_client_async(
                 base_model=BASE_MODEL, rank=8
             )
         )
+        latency = round((time.time() - start) * 1000, 1)
+        # Release the training queue slot immediately so we don't hold
+        # resources that block other users.
+        try:
+            training_client.holder.close()
+        except Exception:
+            pass
         return {
             "service": "training_infra",
             "status": "up",
-            "latency_ms": round((time.time() - start) * 1000, 1),
+            "latency_ms": latency,
         }
     except Exception as e:
         return {
