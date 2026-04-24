@@ -7,8 +7,11 @@ from datetime import datetime, timezone
 import httpx
 import tinker
 from tinker import types
+from tinker.lib.retry_handler import RetryConfig
 
 BASE_MODEL = "meta-llama/Llama-3.2-1B"
+
+NO_RETRY = RetryConfig(enable_retry_logic=False)
 
 # Documented at https://tinker-docs.thinkingmachines.ai/compatible-apis/openai
 # Still labeled beta — could change without notice.
@@ -55,12 +58,9 @@ async def check_reachability(service_client):
         }
 
 
-async def check_sampling(service_client):
+async def check_sampling(sampling_client, tokenizer):
     try:
         start = time.time()
-        sampling_client = service_client.create_sampling_client(base_model=BASE_MODEL)
-        tokenizer = sampling_client.get_tokenizer()
-
         prompt = types.ModelInput.from_ints(tokenizer.encode("2+2="))
         params = types.SamplingParams(max_tokens=16, temperature=0.0)
         result = await with_timeout(
@@ -181,39 +181,55 @@ async def push_results(results: list[dict]):
 
 async def main():
     service_client = tinker.ServiceClient()
-    results = []
+    try:
+        results = []
 
-    print("=== Tinker Health Check ===\n")
+        # Pre-create sampling client (retries disabled) and download the
+        # tokenizer before the timed checks so a slow HuggingFace download
+        # doesn't count against the inference health check.
+        print("Preparing sampling client + tokenizer ...")
+        sampling_client = service_client.create_sampling_client(
+            base_model=BASE_MODEL, retry_config=NO_RETRY,
+        )
+        tokenizer = sampling_client.get_tokenizer()
+        print("      done.\n")
 
-    print("[1/4] Reachability ...")
-    reachability = await check_reachability(service_client)
-    results.append(reachability)
-    print(f"      -> {reachability['status']}\n")
+        print("=== Tinker Health Check ===\n")
 
-    if reachability["status"] == "down":
-        print("Service unreachable — skipping remaining checks.")
-        for svc in ("sampling", "openai_compatible", "training_infra"):
-            results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
-    else:
-        print("[2/4] Sampling ...")
-        sampling = await check_sampling(service_client)
-        results.append(sampling)
-        print(f"      -> {sampling['status']}\n")
+        print("[1/4] Reachability ...")
+        reachability = await check_reachability(service_client)
+        results.append(reachability)
+        print(f"      -> {reachability['status']}\n")
 
-        print("[3/4] OpenAI-compatible ...")
-        oai = await check_openai_compatible()
-        results.append(oai)
-        print(f"      -> {oai['status']}\n")
+        if reachability["status"] == "down":
+            print("Service unreachable — skipping remaining checks.")
+            for svc in ("sampling", "openai_compatible", "training_infra"):
+                results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
+        else:
+            print("[2/4] Sampling ...")
+            sampling = await check_sampling(sampling_client, tokenizer)
+            results.append(sampling)
+            print(f"      -> {sampling['status']}\n")
 
-        print("[4/4] Training infra ...")
-        training = await check_training_client(service_client)
-        results.append(training)
-        print(f"      -> {training['status']}\n")
+            print("[3/4] OpenAI-compatible ...")
+            oai = await check_openai_compatible()
+            results.append(oai)
+            print(f"      -> {oai['status']}\n")
 
-    print("=== Results ===")
-    print(json.dumps(results, indent=2))
+            print("[4/4] Training infra ...")
+            training = await check_training_client(service_client)
+            results.append(training)
+            print(f"      -> {training['status']}\n")
 
-    await push_results(results)
+        print("=== Results ===")
+        print(json.dumps(results, indent=2))
+
+        await push_results(results)
+    finally:
+        try:
+            service_client.holder.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
