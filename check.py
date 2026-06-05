@@ -215,10 +215,10 @@ async def main():
             print("[2/4] Sampling ...")
             if sampling_client and tokenizer:
                 sampling = await check_sampling(sampling_client, tokenizer)
+                results.append(sampling)
+                print(f"      -> {sampling['status']}\n")
             else:
-                sampling = {"service": "sampling", "status": "down", "error": "skipped: tokenizer download failed (HuggingFace rate-limit)"}
-            results.append(sampling)
-            print(f"      -> {sampling['status']}\n")
+                print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
 
             print("[3/4] OpenAI-compatible ...")
             oai = await check_openai_compatible()
