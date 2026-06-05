@@ -188,11 +188,17 @@ async def main():
         # tokenizer before the timed checks so a slow HuggingFace download
         # doesn't count against the inference health check.
         print("Preparing sampling client + tokenizer ...")
-        sampling_client = service_client.create_sampling_client(
-            base_model=BASE_MODEL, retry_config=NO_RETRY,
-        )
-        tokenizer = sampling_client.get_tokenizer()
-        print("      done.\n")
+        sampling_client = None
+        tokenizer = None
+        try:
+            sampling_client = service_client.create_sampling_client(
+                base_model=BASE_MODEL, retry_config=NO_RETRY,
+            )
+            tokenizer = sampling_client.get_tokenizer()
+            print("      done.\n")
+        except Exception as e:
+            print(f"      tokenizer download failed (likely HF rate-limit): {e}\n")
+            print("      will skip sampling check.\n")
 
         print("=== Tinker Health Check ===\n")
 
@@ -207,7 +213,10 @@ async def main():
                 results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
         else:
             print("[2/4] Sampling ...")
-            sampling = await check_sampling(sampling_client, tokenizer)
+            if sampling_client and tokenizer:
+                sampling = await check_sampling(sampling_client, tokenizer)
+            else:
+                sampling = {"service": "sampling", "status": "down", "error": "skipped: tokenizer download failed (HuggingFace rate-limit)"}
             results.append(sampling)
             print(f"      -> {sampling['status']}\n")
 
