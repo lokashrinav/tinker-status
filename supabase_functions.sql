@@ -74,27 +74,26 @@ BEGIN
         GROUP BY b.idx
       ) bucketed;
 
-      -- Fill isolated empty slots between data points with 'up'.
-      -- GitHub Actions occasionally skips a run; that's not an outage.
+      -- Fill small gaps (up to 3 consecutive empty slots) between data points
+      -- with 'up'. GitHub Actions occasionally skips a run; that's not an
+      -- outage. But large gaps (hours/days of missing data) stay empty.
       IF array_length(tick_arr, 1) > 0 THEN
         DECLARE
-          first_data int := NULL;
-          last_data  int := NULL;
           i int;
+          gap_start int := NULL;
         BEGIN
           FOR i IN 1..array_length(tick_arr, 1) LOOP
-            IF tick_arr[i] <> 'empty' THEN
-              IF first_data IS NULL THEN first_data := i; END IF;
-              last_data := i;
+            IF tick_arr[i] = 'empty' THEN
+              IF gap_start IS NULL THEN gap_start := i; END IF;
+            ELSE
+              IF gap_start IS NOT NULL AND (i - gap_start) <= 3 THEN
+                FOR j IN gap_start..(i - 1) LOOP
+                  tick_arr[j] := 'up';
+                END LOOP;
+              END IF;
+              gap_start := NULL;
             END IF;
           END LOOP;
-          IF first_data IS NOT NULL THEN
-            FOR i IN first_data..last_data LOOP
-              IF tick_arr[i] = 'empty' THEN
-                tick_arr[i] := 'up';
-              END IF;
-            END LOOP;
-          END IF;
         END;
       END IF;
 
