@@ -141,6 +141,8 @@
   .status.up .dot { background: var(--green); }
   .status.down { color: var(--red); }
   .status.down .dot { background: var(--red); }
+  .status.unknown { color: var(--text-3); }
+  .status.unknown .dot { background: var(--text-3); }
 
   /* ── Section headers ── */
   .section-head {
@@ -510,10 +512,12 @@ function render() {
   const win = WINDOWS.find(w => w.key === activeWindow);
 
   const sts = SVCS.map(s => latest[s.key]?.status);
-  const allUp = sts.every(s => s === 'up');
-  const allDown = sts.every(s => s === 'down' || !s);
-  const oTxt = allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
-  const oCls = allUp ? '' : allDown ? 'down' : 'degraded';
+  const knownStatuses = sts.filter(Boolean);
+  const allUp = knownStatuses.length > 0 && knownStatuses.every(s => s === 'up');
+  const allDown = knownStatuses.length > 0 && knownStatuses.every(s => s === 'down');
+  const noData = knownStatuses.length === 0;
+  const oTxt = noData ? 'No data yet' : allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
+  const oCls = noData ? 'degraded' : allUp ? '' : allDown ? 'down' : 'degraded';
 
   const lastCheck = latest[SVCS[0].key]?.checked_at;
   const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
@@ -531,10 +535,11 @@ function render() {
 
     <div class="services">
       ${SVCS.map(s => {
-        const d = latest[s.key], st = d?.status || 'down';
+        const d = latest[s.key], st = d?.status || 'unknown';
+        const label = st === 'up' ? 'Operational' : st === 'down' ? 'Outage' : 'No data';
         return `<div class="service">
           <div class="service-name">${s.name}</div>
-          <span class="status ${st}"><span class="dot"></span>${st === 'up' ? 'Operational' : 'Outage'}</span>
+          <span class="status ${st}"><span class="dot"></span>${label}</span>
         </div>`;
       }).join('')}
     </div>

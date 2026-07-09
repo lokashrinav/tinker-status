@@ -9,7 +9,10 @@ import tinker
 from tinker import types
 from tinker.lib.retry_handler import RetryConfig
 
-BASE_MODEL = "meta-llama/Llama-3.2-1B"
+PREFERRED_MODELS = [
+    "meta-llama/Llama-3.2-1B",
+    "meta-llama/Llama-3.1-8B",
+]
 
 NO_RETRY = RetryConfig(enable_retry_logic=False)
 
@@ -34,6 +37,13 @@ async def with_timeout(coro, timeout=CHECK_TIMEOUT):
         raise TimeoutError(f"Timed out after {timeout}s")
 
 
+def pick_model(supported_models: list[str]) -> str | None:
+    for pref in PREFERRED_MODELS:
+        if pref in supported_models:
+            return pref
+    return supported_models[0] if supported_models else None
+
+
 # ── Checks ──────────────────────────────────────────────────────────────────
 
 
@@ -44,11 +54,13 @@ async def check_reachability(service_client):
             service_client.get_server_capabilities_async()
         )
         model_names = [str(m) for m in capabilities.supported_models]
+        chosen = pick_model(model_names)
         return {
             "service": "reachability",
             "status": "up",
             "latency_ms": round((time.time() - start) * 1000, 1),
-            "meta": {"supported_models": model_names},
+            "meta": {"supported_models": model_names, "chosen_model": chosen},
+            "_chosen_model": chosen,
         }
     except Exception as e:
         return {
@@ -84,11 +96,11 @@ async def check_sampling(sampling_client, tokenizer):
         }
 
 
-async def check_openai_compatible():
+async def check_openai_compatible(model: str):
     api_key = os.environ.get("TINKER_API_KEY", "")
     headers = {"Authorization": f"Bearer {api_key}"}
     payload = {
-        "model": BASE_MODEL,
+        "model": model,
         "prompt": "2+2=",
         "max_tokens": 16,
         "temperature": 0.0,
@@ -118,12 +130,12 @@ async def check_openai_compatible():
         }
 
 
-async def check_training_client(service_client):
+async def check_training_client(service_client, model: str):
     try:
         start = time.time()
         training_client = await with_timeout(
             service_client.create_lora_training_client_async(
-                base_model=BASE_MODEL, rank=8
+                base_model=model, rank=8
             )
         )
         latency = round((time.time() - start) * 1000, 1)
@@ -152,13 +164,14 @@ async def check_training_client(service_client):
 async def push_results(results: list[dict]):
     rows = []
     for r in results:
+        meta = {k: v for k, v in (r.get("meta") or {}).items()}
         rows.append({
             "checked_at": now_utc(),
             "service": r["service"],
             "status": r["status"],
             "latency_ms": r.get("latency_ms"),
             "error": r.get("error"),
-            "meta": json.dumps(r.get("meta")) if r.get("meta") else None,
+            "meta": json.dumps(meta) if meta else None,
         })
 
     async with httpx.AsyncClient() as client:
@@ -184,22 +197,6 @@ async def main():
     try:
         results = []
 
-        # Pre-create sampling client (retries disabled) and download the
-        # tokenizer before the timed checks so a slow HuggingFace download
-        # doesn't count against the inference health check.
-        print("Preparing sampling client + tokenizer ...")
-        sampling_client = None
-        tokenizer = None
-        try:
-            sampling_client = service_client.create_sampling_client(
-                base_model=BASE_MODEL, retry_config=NO_RETRY,
-            )
-            tokenizer = sampling_client.get_tokenizer()
-            print("      done.\n")
-        except Exception as e:
-            print(f"      tokenizer download failed (likely HF rate-limit): {e}\n")
-            print("      will skip sampling check.\n")
-
         print("=== Tinker Health Check ===\n")
 
         print("[1/4] Reachability ...")
@@ -212,23 +209,47 @@ async def main():
             for svc in ("sampling", "openai_compatible", "training_infra"):
                 results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
         else:
-            print("[2/4] Sampling ...")
-            if sampling_client and tokenizer:
-                sampling = await check_sampling(sampling_client, tokenizer)
-                results.append(sampling)
-                print(f"      -> {sampling['status']}\n")
+            model = reachability.get("_chosen_model")
+            if not model:
+                print("No models available — skipping model-dependent checks.")
+                for svc in ("sampling", "openai_compatible", "training_infra"):
+                    results.append({"service": svc, "status": "down", "error": "no models available on server"})
             else:
-                print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
+                print(f"      using model: {model}\n")
 
-            print("[3/4] OpenAI-compatible ...")
-            oai = await check_openai_compatible()
-            results.append(oai)
-            print(f"      -> {oai['status']}\n")
+                # Pre-create sampling client (retries disabled) and download the
+                # tokenizer before the timed checks so a slow HuggingFace download
+                # doesn't count against the inference health check.
+                print("Preparing sampling client + tokenizer ...")
+                sampling_client = None
+                tokenizer = None
+                try:
+                    sampling_client = service_client.create_sampling_client(
+                        base_model=model, retry_config=NO_RETRY,
+                    )
+                    tokenizer = sampling_client.get_tokenizer()
+                    print("      done.\n")
+                except Exception as e:
+                    print(f"      tokenizer download failed (likely HF rate-limit): {e}\n")
+                    print("      will skip sampling check.\n")
 
-            print("[4/4] Training infra ...")
-            training = await check_training_client(service_client)
-            results.append(training)
-            print(f"      -> {training['status']}\n")
+                print("[2/4] Sampling ...")
+                if sampling_client and tokenizer:
+                    sampling = await check_sampling(sampling_client, tokenizer)
+                    results.append(sampling)
+                    print(f"      -> {sampling['status']}\n")
+                else:
+                    print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
+
+                print("[3/4] OpenAI-compatible ...")
+                oai = await check_openai_compatible(model)
+                results.append(oai)
+                print(f"      -> {oai['status']}\n")
+
+                print("[4/4] Training infra ...")
+                training = await check_training_client(service_client, model)
+                results.append(training)
+                print(f"      -> {training['status']}\n")
 
         print("=== Results ===")
         print(json.dumps(results, indent=2))

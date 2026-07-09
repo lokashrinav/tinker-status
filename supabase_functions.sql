@@ -74,6 +74,30 @@ BEGIN
         GROUP BY b.idx
       ) bucketed;
 
+      -- Fill isolated empty slots between data points with 'up'.
+      -- GitHub Actions occasionally skips a run; that's not an outage.
+      IF array_length(tick_arr, 1) > 0 THEN
+        DECLARE
+          first_data int := NULL;
+          last_data  int := NULL;
+          i int;
+        BEGIN
+          FOR i IN 1..array_length(tick_arr, 1) LOOP
+            IF tick_arr[i] <> 'empty' THEN
+              IF first_data IS NULL THEN first_data := i; END IF;
+              last_data := i;
+            END IF;
+          END LOOP;
+          IF first_data IS NOT NULL THEN
+            FOR i IN first_data..last_data LOOP
+              IF tick_arr[i] = 'empty' THEN
+                tick_arr[i] := 'up';
+              END IF;
+            END LOOP;
+          END IF;
+        END;
+      END IF;
+
       ticks_out := jsonb_set(ticks_out, ARRAY[s],
         (ticks_out->s) || jsonb_build_object(win_keys[w_idx], to_jsonb(tick_arr)));
 
