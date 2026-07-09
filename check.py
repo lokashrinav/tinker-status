@@ -10,8 +10,9 @@ from tinker import types
 from tinker.lib.retry_handler import RetryConfig
 
 PREFERRED_MODELS = [
-    "meta-llama/Llama-3.2-1B",
-    "meta-llama/Llama-3.1-8B",
+    "Qwen/Qwen3-8B",
+    "meta-llama/Llama-3.2-3B",
+    "Qwen/Qwen3-30B-A3B",
 ]
 
 NO_RETRY = RetryConfig(enable_retry_logic=False)
@@ -53,7 +54,7 @@ async def check_reachability(service_client):
         capabilities = await with_timeout(
             service_client.get_server_capabilities_async()
         )
-        model_names = [str(m) for m in capabilities.supported_models]
+        model_names = [m.model_name if hasattr(m, 'model_name') else str(m) for m in capabilities.supported_models]
         chosen = pick_model(model_names)
         return {
             "service": "reachability",
