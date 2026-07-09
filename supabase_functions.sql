@@ -74,29 +74,6 @@ BEGIN
         GROUP BY b.idx
       ) bucketed;
 
-      -- Fill small gaps (up to 3 consecutive empty slots) between data points
-      -- with 'up'. GitHub Actions occasionally skips a run; that's not an
-      -- outage. But large gaps (hours/days of missing data) stay empty.
-      IF array_length(tick_arr, 1) > 0 THEN
-        DECLARE
-          i int;
-          gap_start int := NULL;
-        BEGIN
-          FOR i IN 1..array_length(tick_arr, 1) LOOP
-            IF tick_arr[i] = 'empty' THEN
-              IF gap_start IS NULL THEN gap_start := i; END IF;
-            ELSE
-              IF gap_start IS NOT NULL AND (i - gap_start) <= 3 THEN
-                FOR j IN gap_start..(i - 1) LOOP
-                  tick_arr[j] := 'up';
-                END LOOP;
-              END IF;
-              gap_start := NULL;
-            END IF;
-          END LOOP;
-        END;
-      END IF;
-
       ticks_out := jsonb_set(ticks_out, ARRAY[s],
         (ticks_out->s) || jsonb_build_object(win_keys[w_idx], to_jsonb(tick_arr)));
 
