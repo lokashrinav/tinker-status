@@ -41,13 +41,6 @@ def now_utc():
     return datetime.now(timezone.utc).isoformat()
 
 
-async def with_timeout(coro, timeout=CHECK_TIMEOUT):
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except asyncio.TimeoutError:
-        raise TimeoutError(f"Timed out after {timeout}s")
-
-
 def pick_model(supported_models: list[str]) -> str | None:
     for pref in PREFERRED_MODELS:
         if pref in supported_models:
