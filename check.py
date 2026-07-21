@@ -1,10 +1,8 @@
 import asyncio
 import json
 import os
-import signal
 import sys
 import time
-import threading
 from datetime import datetime, timezone
 
 import httpx
@@ -353,17 +351,11 @@ async def main_with_timeout():
         await push_results(results)
 
 
-def hard_kill_timer():
-    """Last-resort: kill the process if asyncio.run() hangs on cleanup.
-    gRPC threads ignore asyncio cancellation, so executor shutdown can
-    block forever. This fires 10s after main_with_timeout finishes."""
-    time.sleep(SCRIPT_TIMEOUT + 30)
-    print("*** HARD KILL: process hung on cleanup ***", flush=True)
-    os._exit(1)
-
-
 if __name__ == "__main__":
-    watchdog = threading.Thread(target=hard_kill_timer, daemon=True)
-    watchdog.start()
-    asyncio.run(main_with_timeout())
-    os._exit(0)
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(main_with_timeout())
+    finally:
+        # Don't call loop.close() or shutdown_default_executor() — gRPC
+        # threads block forever.  Results are already pushed; just exit.
+        os._exit(0)
