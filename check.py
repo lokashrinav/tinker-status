@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sys
 import time
 from datetime import datetime, timezone
 
@@ -17,14 +18,23 @@ PREFERRED_MODELS = [
 
 NO_RETRY = RetryConfig(enable_retry_logic=False)
 
-# Documented at https://tinker-docs.thinkingmachines.ai/compatible-apis/openai
-# Still labeled beta — could change without notice.
 OAI_BASE_URL = "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1"
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
-
 CHECK_TIMEOUT = 60
+SCRIPT_TIMEOUT = 240
+ALL_SERVICES = ("reachability", "sampling", "openai_compatible", "training_infra")
+
+
+def require_env(name: str) -> str:
+    val = os.environ.get(name)
+    if not val:
+        print(f"FATAL: {name} env var is missing or empty", flush=True)
+        sys.exit(1)
+    return val
+
+
+SUPABASE_URL = require_env("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = require_env("SUPABASE_SERVICE_KEY")
 
 
 def now_utc():
@@ -43,6 +53,14 @@ def pick_model(supported_models: list[str]) -> str | None:
         if pref in supported_models:
             return pref
     return supported_models[0] if supported_models else None
+
+
+def close_holder(obj, label="object"):
+    """Non-blocking best-effort close with a hard 5s deadline."""
+    try:
+        obj.holder.close()
+    except Exception as e:
+        print(f"      {label}.holder.close() failed: {e}", flush=True)
 
 
 # ── Checks ──────────────────────────────────────────────────────────────────
@@ -132,6 +150,7 @@ async def check_openai_compatible(model: str):
 
 
 async def check_training_client(service_client, model: str):
+    training_client = None
     try:
         start = time.time()
         training_client = await with_timeout(
@@ -140,12 +159,6 @@ async def check_training_client(service_client, model: str):
             )
         )
         latency = round((time.time() - start) * 1000, 1)
-        # Release the training queue slot immediately so we don't hold
-        # resources that block other users.
-        try:
-            training_client.holder.close()
-        except Exception:
-            pass
         return {
             "service": "training_infra",
             "status": "up",
@@ -157,6 +170,9 @@ async def check_training_client(service_client, model: str):
             "status": "down",
             "error": str(e),
         }
+    finally:
+        if training_client:
+            close_holder(training_client, "training_client")
 
 
 # ── Supabase writer ────────────────────────────────────────────────────────
@@ -164,10 +180,11 @@ async def check_training_client(service_client, model: str):
 
 async def push_results(results: list[dict]):
     rows = []
+    ts = now_utc()
     for r in results:
         meta = {k: v for k, v in (r.get("meta") or {}).items()}
         rows.append({
-            "checked_at": now_utc(),
+            "checked_at": ts,
             "service": r["service"],
             "status": r["status"],
             "latency_ms": r.get("latency_ms"),
@@ -175,35 +192,47 @@ async def push_results(results: list[dict]):
             "meta": json.dumps(meta) if meta else None,
         })
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{SUPABASE_URL}/rest/v1/check_results",
-            json=rows,
-            headers={
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal",
-            },
-        )
-        resp.raise_for_status()
-    print(f"Pushed {len(rows)} rows to Supabase.")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{SUPABASE_URL}/rest/v1/check_results",
+                json=rows,
+                headers={
+                    "apikey": SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+            )
+            resp.raise_for_status()
+        print(f"Pushed {len(rows)} rows to Supabase.", flush=True)
+    except Exception as e:
+        print(f"*** FAILED to push results to Supabase: {e} ***", flush=True)
+        print(f"    Rows that would have been pushed: {json.dumps(rows, indent=2)}", flush=True)
+
+
+def ensure_all_services(results: list[dict], reason: str) -> list[dict]:
+    """Guarantee every service has exactly one result row."""
+    present = {r["service"] for r in results}
+    for svc in ALL_SERVICES:
+        if svc not in present:
+            results.append({"service": svc, "status": "down", "error": reason})
+    return results
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
 
-SCRIPT_TIMEOUT = 240
-
-
 async def main():
     print("=== Tinker Health Check ===\n", flush=True)
+
+    loop = asyncio.get_running_loop()
 
     service_client = None
     try:
         print("Connecting to Tinker ...", flush=True)
         service_client = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(None, tinker.ServiceClient),
+            loop.run_in_executor(None, tinker.ServiceClient),
             timeout=CHECK_TIMEOUT,
         )
         print("      connected.\n", flush=True)
@@ -211,7 +240,7 @@ async def main():
         print(f"      ServiceClient failed: {e}\n", flush=True)
         results = [
             {"service": svc, "status": "down", "error": f"ServiceClient init failed: {e}"}
-            for svc in ("reachability", "sampling", "openai_compatible", "training_infra")
+            for svc in ALL_SERVICES
         ]
         print("=== Results ===")
         print(json.dumps(results, indent=2))
@@ -243,14 +272,22 @@ async def main():
                 sampling_client = None
                 tokenizer = None
                 try:
-                    sampling_client = service_client.create_sampling_client(
-                        base_model=model, retry_config=NO_RETRY,
+                    sampling_client = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda: service_client.create_sampling_client(
+                                base_model=model, retry_config=NO_RETRY,
+                            ),
+                        ),
+                        timeout=CHECK_TIMEOUT,
                     )
-                    tokenizer = sampling_client.get_tokenizer()
+                    tokenizer = await asyncio.wait_for(
+                        loop.run_in_executor(None, sampling_client.get_tokenizer),
+                        timeout=CHECK_TIMEOUT,
+                    )
                     print("      done.\n", flush=True)
                 except Exception as e:
-                    print(f"      tokenizer download failed (likely HF rate-limit): {e}\n")
-                    print("      will skip sampling check.\n")
+                    print(f"      tokenizer/client setup failed: {e}\n", flush=True)
 
                 print("[2/4] Sampling ...", flush=True)
                 if sampling_client and tokenizer:
@@ -270,15 +307,15 @@ async def main():
                 results.append(training)
                 print(f"      -> {training['status']}\n", flush=True)
 
+        results = ensure_all_services(results, "skipped: not reached in check flow")
+
         print("=== Results ===")
         print(json.dumps(results, indent=2))
 
         await push_results(results)
     finally:
-        try:
-            service_client.holder.close()
-        except Exception:
-            pass
+        if service_client:
+            close_holder(service_client, "service_client")
 
 
 async def main_with_timeout():
@@ -288,7 +325,14 @@ async def main_with_timeout():
         print(f"\n*** Script exceeded {SCRIPT_TIMEOUT}s global timeout ***", flush=True)
         results = [
             {"service": svc, "status": "down", "error": f"check script timed out after {SCRIPT_TIMEOUT}s"}
-            for svc in ("reachability", "sampling", "openai_compatible", "training_infra")
+            for svc in ALL_SERVICES
+        ]
+        await push_results(results)
+    except Exception as e:
+        print(f"\n*** Unhandled exception in main: {e} ***", flush=True)
+        results = [
+            {"service": svc, "status": "down", "error": f"unhandled: {e}"}
+            for svc in ALL_SERVICES
         ]
         await push_results(results)
 

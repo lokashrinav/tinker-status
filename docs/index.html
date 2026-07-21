@@ -466,7 +466,10 @@ async function fetchSummary() {
     },
     body: JSON.stringify({ check_interval_min: CHECK_INTERVAL_MIN }),
   });
-  return r.json();
+  if (!r.ok) throw new Error(`Supabase returned ${r.status}: ${r.statusText}`);
+  const body = await r.json();
+  if (!body || typeof body !== 'object' || !body.ticks) throw new Error('Unexpected response shape from Supabase');
+  return body;
 }
 
 function pctStr(p) { return p === null ? '\u2014' : p.toFixed(2) + '%'; }
@@ -479,6 +482,7 @@ function fmtMs(ms) {
 }
 
 function buildIncidents(downRows) {
+  if (!Array.isArray(downRows)) return [];
   const incidents = [];
   let current = null;
   for (const r of downRows) {
@@ -521,6 +525,11 @@ function render() {
 
   const lastCheck = latest[SVCS[0].key]?.checked_at;
   const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
+  const staleMs = lastCheck ? Date.now() - new Date(lastCheck).getTime() : Infinity;
+  const isStale = staleMs > 30 * 60 * 1000;
+  const staleNote = isStale && lastCheck
+    ? ` <span style="color:var(--yellow);font-weight:500">(${fmtDuration(staleMs)} ago)</span>`
+    : '';
 
   const incidents = buildIncidents(rawIncidents);
 
@@ -529,7 +538,7 @@ function render() {
       <h1>Tinker Status</h1>
       <div class="overall">
         <div class="dot ${oCls}"></div>${oTxt}
-        <span class="ts">Last checked ${lastStr}</span>
+        <span class="ts">Last checked ${lastStr}${staleNote}</span>
       </div>
     </header>
 
@@ -555,19 +564,17 @@ function render() {
         ).join('')}
       </div>
       ${SVCS.map(s => {
-        let tk = ticks[s.key]?.[win.key] || [];
-        while (tk.length && tk[tk.length - 1] === 'empty') tk = tk.slice(0, -1);
+        const tk = ticks[s.key]?.[win.key] || [];
         const u = uptime[s.key]?.[win.key] ?? null;
-        const totalSlots = ticks[s.key]?.[win.key]?.length || tk.length;
         const filled = tk.filter(t => t !== 'empty').length;
-        const coverage = totalSlots ? Math.round((filled / totalSlots) * 100) : 0;
-        const coverageNote = coverage < 80 ? ` <span style="font-size:0.65rem;color:var(--text-3)">(${coverage}% coverage)</span>` : '';
+        const coverage = tk.length ? Math.round((filled / tk.length) * 100) : 0;
+        const coverageNote = coverage < 80 ? ` <span style="font-size:0.65rem;color:var(--text-3)">(${coverage}% data)</span>` : '';
         return `<div class="bar-row">
           <div class="bar-label">
             <span class="bar-name">${s.name}</span>
             <span class="bar-pct ${pctCls(u)}">${pctStr(u)}${coverageNote}</span>
           </div>
-          <div class="bar">${tk.map(t => `<div class="t ${t}"></div>`).join('')}</div>
+          <div class="bar">${tk.length ? tk.map(t => `<div class="t ${t}"></div>`).join('') : '<div class="t empty" style="flex:1"></div>'}</div>
         </div>`;
       }).join('')}
       <div class="bar-range"><span>${win.label} ago</span><span>now</span></div>
@@ -639,7 +646,7 @@ function render() {
       }
     </div>
 
-    <footer>Last checked ${lastStr}</footer>`;
+    <footer>Last checked ${lastStr}${staleNote}</footer>`;
 }
 
 function setWindow(key) {
@@ -647,14 +654,23 @@ function setWindow(key) {
   render();
 }
 
+let fetching = false;
 async function load() {
+  if (fetching) return;
+  fetching = true;
   try {
     allData = await fetchSummary();
     render();
     document.querySelector('.ink-blob')?.classList.add('visible');
   } catch (e) {
-    document.getElementById('app').innerHTML =
-      `<div class="loading" style="color:var(--red)">Failed to load: ${e.message}</div>`;
+    if (allData) {
+      render();
+    } else {
+      document.getElementById('app').innerHTML =
+        `<div class="loading" style="color:var(--red)">Failed to load status data.<br><span style="font-size:0.72rem;color:var(--text-3)">${e.message}</span></div>`;
+    }
+  } finally {
+    fetching = false;
   }
 }
 
