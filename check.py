@@ -55,14 +55,6 @@ def pick_model(supported_models: list[str]) -> str | None:
     return supported_models[0] if supported_models else None
 
 
-def close_holder(obj, label="object"):
-    """Non-blocking best-effort close with a hard 5s deadline."""
-    try:
-        obj.holder.close()
-    except Exception as e:
-        print(f"      {label}.holder.close() failed: {e}", flush=True)
-
-
 # ── Checks ──────────────────────────────────────────────────────────────────
 
 
@@ -160,7 +152,6 @@ async def check_openai_compatible(model: str):
 
 
 async def check_training_client(service_client, model: str):
-    training_client = None
     try:
         start = time.time()
         loop = asyncio.get_running_loop()
@@ -168,7 +159,7 @@ async def check_training_client(service_client, model: str):
             return service_client.create_lora_training_client(
                 base_model=model, rank=8
             )
-        training_client = await asyncio.wait_for(
+        await asyncio.wait_for(
             loop.run_in_executor(None, _create),
             timeout=CHECK_TIMEOUT,
         )
@@ -184,9 +175,6 @@ async def check_training_client(service_client, model: str):
             "status": "down",
             "error": str(e),
         }
-    finally:
-        if training_client:
-            close_holder(training_client, "training_client")
 
 
 # ── Supabase writer ────────────────────────────────────────────────────────
@@ -261,75 +249,71 @@ async def main():
         await push_results(results)
         return
 
-    try:
-        results = []
+    results = []
 
-        print("[1/4] Reachability ...", flush=True)
-        reachability = await check_reachability(service_client)
-        results.append(reachability)
-        print(f"      -> {reachability['status']}\n", flush=True)
+    print("[1/4] Reachability ...", flush=True)
+    reachability = await check_reachability(service_client)
+    results.append(reachability)
+    print(f"      -> {reachability['status']}\n", flush=True)
 
-        if reachability["status"] == "down":
-            print("Service unreachable — skipping remaining checks.")
+    if reachability["status"] == "down":
+        print("Service unreachable — skipping remaining checks.")
+        for svc in ("sampling", "openai_compatible", "training_infra"):
+            results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
+    else:
+        model = reachability.get("_chosen_model")
+        if not model:
+            print("No models available — skipping model-dependent checks.")
             for svc in ("sampling", "openai_compatible", "training_infra"):
-                results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
+                results.append({"service": svc, "status": "down", "error": "no models available on server"})
         else:
-            model = reachability.get("_chosen_model")
-            if not model:
-                print("No models available — skipping model-dependent checks.")
-                for svc in ("sampling", "openai_compatible", "training_infra"):
-                    results.append({"service": svc, "status": "down", "error": "no models available on server"})
-            else:
-                print(f"      using model: {model}\n")
+            print(f"      using model: {model}\n")
 
-                print("Preparing sampling client + tokenizer ...", flush=True)
-                sampling_client = None
-                tokenizer = None
-                try:
-                    sampling_client = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None,
-                            lambda: service_client.create_sampling_client(
-                                base_model=model, retry_config=NO_RETRY,
-                            ),
+            print("Preparing sampling client + tokenizer ...", flush=True)
+            sampling_client = None
+            tokenizer = None
+            try:
+                sampling_client = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: service_client.create_sampling_client(
+                            base_model=model, retry_config=NO_RETRY,
                         ),
-                        timeout=CHECK_TIMEOUT,
-                    )
-                    tokenizer = await asyncio.wait_for(
-                        loop.run_in_executor(None, sampling_client.get_tokenizer),
-                        timeout=CHECK_TIMEOUT,
-                    )
-                    print("      done.\n", flush=True)
-                except Exception as e:
-                    print(f"      tokenizer/client setup failed: {e}\n", flush=True)
+                    ),
+                    timeout=CHECK_TIMEOUT,
+                )
+                tokenizer = await asyncio.wait_for(
+                    loop.run_in_executor(None, sampling_client.get_tokenizer),
+                    timeout=CHECK_TIMEOUT,
+                )
+                print("      done.\n", flush=True)
+            except Exception as e:
+                print(f"      tokenizer/client setup failed: {e}\n", flush=True)
 
-                print("[2/4] Sampling ...", flush=True)
-                if sampling_client and tokenizer:
-                    sampling = await check_sampling(sampling_client, tokenizer)
-                    results.append(sampling)
-                    print(f"      -> {sampling['status']}\n", flush=True)
-                else:
-                    print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
+            print("[2/4] Sampling ...", flush=True)
+            if sampling_client and tokenizer:
+                sampling = await check_sampling(sampling_client, tokenizer)
+                results.append(sampling)
+                print(f"      -> {sampling['status']}\n", flush=True)
+            else:
+                print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
 
-                print("[3/4] OpenAI-compatible ...", flush=True)
-                oai = await check_openai_compatible(model)
-                results.append(oai)
-                print(f"      -> {oai['status']}\n", flush=True)
+            print("[3/4] OpenAI-compatible ...", flush=True)
+            oai = await check_openai_compatible(model)
+            results.append(oai)
+            print(f"      -> {oai['status']}\n", flush=True)
 
-                print("[4/4] Training infra ...", flush=True)
-                training = await check_training_client(service_client, model)
-                results.append(training)
-                print(f"      -> {training['status']}\n", flush=True)
+            print("[4/4] Training infra ...", flush=True)
+            training = await check_training_client(service_client, model)
+            results.append(training)
+            print(f"      -> {training['status']}\n", flush=True)
 
-        results = ensure_all_services(results, "skipped: not reached in check flow")
+    results = ensure_all_services(results, "skipped: not reached in check flow")
 
-        print("=== Results ===")
-        print(json.dumps(results, indent=2))
+    print("=== Results ===")
+    print(json.dumps(results, indent=2))
 
-        await push_results(results)
-    finally:
-        if service_client:
-            close_holder(service_client, "service_client")
+    await push_results(results)
 
 
 async def main_with_timeout():
