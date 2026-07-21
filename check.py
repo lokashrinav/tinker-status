@@ -193,17 +193,38 @@ async def push_results(results: list[dict]):
 # ── Main ────────────────────────────────────────────────────────────────────
 
 
+SCRIPT_TIMEOUT = 240
+
+
 async def main():
-    service_client = tinker.ServiceClient()
+    print("=== Tinker Health Check ===\n", flush=True)
+
+    service_client = None
+    try:
+        print("Connecting to Tinker ...", flush=True)
+        service_client = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, tinker.ServiceClient),
+            timeout=CHECK_TIMEOUT,
+        )
+        print("      connected.\n", flush=True)
+    except Exception as e:
+        print(f"      ServiceClient failed: {e}\n", flush=True)
+        results = [
+            {"service": svc, "status": "down", "error": f"ServiceClient init failed: {e}"}
+            for svc in ("reachability", "sampling", "openai_compatible", "training_infra")
+        ]
+        print("=== Results ===")
+        print(json.dumps(results, indent=2))
+        await push_results(results)
+        return
+
     try:
         results = []
 
-        print("=== Tinker Health Check ===\n")
-
-        print("[1/4] Reachability ...")
+        print("[1/4] Reachability ...", flush=True)
         reachability = await check_reachability(service_client)
         results.append(reachability)
-        print(f"      -> {reachability['status']}\n")
+        print(f"      -> {reachability['status']}\n", flush=True)
 
         if reachability["status"] == "down":
             print("Service unreachable — skipping remaining checks.")
@@ -218,10 +239,7 @@ async def main():
             else:
                 print(f"      using model: {model}\n")
 
-                # Pre-create sampling client (retries disabled) and download the
-                # tokenizer before the timed checks so a slow HuggingFace download
-                # doesn't count against the inference health check.
-                print("Preparing sampling client + tokenizer ...")
+                print("Preparing sampling client + tokenizer ...", flush=True)
                 sampling_client = None
                 tokenizer = None
                 try:
@@ -229,28 +247,28 @@ async def main():
                         base_model=model, retry_config=NO_RETRY,
                     )
                     tokenizer = sampling_client.get_tokenizer()
-                    print("      done.\n")
+                    print("      done.\n", flush=True)
                 except Exception as e:
                     print(f"      tokenizer download failed (likely HF rate-limit): {e}\n")
                     print("      will skip sampling check.\n")
 
-                print("[2/4] Sampling ...")
+                print("[2/4] Sampling ...", flush=True)
                 if sampling_client and tokenizer:
                     sampling = await check_sampling(sampling_client, tokenizer)
                     results.append(sampling)
-                    print(f"      -> {sampling['status']}\n")
+                    print(f"      -> {sampling['status']}\n", flush=True)
                 else:
                     print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
 
-                print("[3/4] OpenAI-compatible ...")
+                print("[3/4] OpenAI-compatible ...", flush=True)
                 oai = await check_openai_compatible(model)
                 results.append(oai)
-                print(f"      -> {oai['status']}\n")
+                print(f"      -> {oai['status']}\n", flush=True)
 
-                print("[4/4] Training infra ...")
+                print("[4/4] Training infra ...", flush=True)
                 training = await check_training_client(service_client, model)
                 results.append(training)
-                print(f"      -> {training['status']}\n")
+                print(f"      -> {training['status']}\n", flush=True)
 
         print("=== Results ===")
         print(json.dumps(results, indent=2))
@@ -263,5 +281,17 @@ async def main():
             pass
 
 
+async def main_with_timeout():
+    try:
+        await asyncio.wait_for(main(), timeout=SCRIPT_TIMEOUT)
+    except asyncio.TimeoutError:
+        print(f"\n*** Script exceeded {SCRIPT_TIMEOUT}s global timeout ***", flush=True)
+        results = [
+            {"service": svc, "status": "down", "error": f"check script timed out after {SCRIPT_TIMEOUT}s"}
+            for svc in ("reachability", "sampling", "openai_compatible", "training_infra")
+        ]
+        await push_results(results)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main_with_timeout())
