@@ -1,8 +1,10 @@
 import asyncio
 import json
 import os
+import signal
 import sys
 import time
+import threading
 from datetime import datetime, timezone
 
 import httpx
@@ -69,8 +71,14 @@ def close_holder(obj, label="object"):
 async def check_reachability(service_client):
     try:
         start = time.time()
-        capabilities = await with_timeout(
-            service_client.get_server_capabilities_async()
+        loop = asyncio.get_running_loop()
+        # gRPC coroutines ignore asyncio cancellation, so run the blocking
+        # sync version in a thread with a hard timeout instead.
+        def _get_caps():
+            return service_client.get_server_capabilities()
+        capabilities = await asyncio.wait_for(
+            loop.run_in_executor(None, _get_caps),
+            timeout=CHECK_TIMEOUT,
         )
         model_names = [m.model_name if hasattr(m, 'model_name') else str(m) for m in capabilities.supported_models]
         chosen = pick_model(model_names)
@@ -94,10 +102,14 @@ async def check_sampling(sampling_client, tokenizer):
         start = time.time()
         prompt = types.ModelInput.from_ints(tokenizer.encode("2+2="))
         params = types.SamplingParams(max_tokens=16, temperature=0.0)
-        result = await with_timeout(
-            sampling_client.sample_async(
+        loop = asyncio.get_running_loop()
+        def _sample():
+            return sampling_client.sample(
                 prompt=prompt, num_samples=1, sampling_params=params
             )
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, _sample),
+            timeout=CHECK_TIMEOUT,
         )
 
         output_text = tokenizer.decode(result.sequences[0].tokens)
@@ -153,10 +165,14 @@ async def check_training_client(service_client, model: str):
     training_client = None
     try:
         start = time.time()
-        training_client = await with_timeout(
-            service_client.create_lora_training_client_async(
+        loop = asyncio.get_running_loop()
+        def _create():
+            return service_client.create_lora_training_client(
                 base_model=model, rank=8
             )
+        training_client = await asyncio.wait_for(
+            loop.run_in_executor(None, _create),
+            timeout=CHECK_TIMEOUT,
         )
         latency = round((time.time() - start) * 1000, 1)
         return {
@@ -337,5 +353,17 @@ async def main_with_timeout():
         await push_results(results)
 
 
+def hard_kill_timer():
+    """Last-resort: kill the process if asyncio.run() hangs on cleanup.
+    gRPC threads ignore asyncio cancellation, so executor shutdown can
+    block forever. This fires 10s after main_with_timeout finishes."""
+    time.sleep(SCRIPT_TIMEOUT + 30)
+    print("*** HARD KILL: process hung on cleanup ***", flush=True)
+    os._exit(1)
+
+
 if __name__ == "__main__":
+    watchdog = threading.Thread(target=hard_kill_timer, daemon=True)
+    watchdog.start()
     asyncio.run(main_with_timeout())
+    os._exit(0)
