@@ -51,25 +51,25 @@ def pick_model(supported_models: list[str]) -> str | None:
 # ── Checks ──────────────────────────────────────────────────────────────────
 
 
-async def check_reachability(service_client):
+async def check_reachability():
+    api_key = os.environ.get("TINKER_API_KEY", "")
     try:
         start = time.time()
-        loop = asyncio.get_running_loop()
-        # gRPC coroutines ignore asyncio cancellation, so run the blocking
-        # sync version in a thread with a hard timeout instead.
-        def _get_caps():
-            return service_client.get_server_capabilities()
-        capabilities = await asyncio.wait_for(
-            loop.run_in_executor(None, _get_caps),
-            timeout=CHECK_TIMEOUT,
-        )
-        model_names = [m.model_name if hasattr(m, 'model_name') else str(m) for m in capabilities.supported_models]
-        chosen = pick_model(model_names)
+        async with httpx.AsyncClient(timeout=CHECK_TIMEOUT) as client:
+            resp = await client.get(
+                f"{OAI_BASE_URL}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+
+        model_ids = [m["id"] for m in body.get("data", [])]
+        chosen = pick_model(model_ids)
         return {
             "service": "reachability",
             "status": "up",
             "latency_ms": round((time.time() - start) * 1000, 1),
-            "meta": {"supported_models": model_names, "chosen_model": chosen},
+            "meta": {"supported_models": model_ids, "chosen_model": chosen},
             "_chosen_model": chosen,
         }
     except Exception as e:
@@ -80,12 +80,35 @@ async def check_reachability(service_client):
         }
 
 
-async def check_sampling(sampling_client, tokenizer):
+async def check_sampling(service_client, model):
+    sampling_client = None
+    tokenizer = None
+    loop = asyncio.get_running_loop()
+    try:
+        sampling_client = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: service_client.create_sampling_client(
+                    base_model=model, retry_config=NO_RETRY,
+                ),
+            ),
+            timeout=CHECK_TIMEOUT,
+        )
+        tokenizer = await asyncio.wait_for(
+            loop.run_in_executor(None, sampling_client.get_tokenizer),
+            timeout=CHECK_TIMEOUT,
+        )
+    except Exception as e:
+        return {
+            "service": "sampling",
+            "status": "down",
+            "error": f"client/tokenizer setup failed: {e}",
+        }
+
     try:
         start = time.time()
         prompt = types.ModelInput.from_ints(tokenizer.encode("2+2="))
         params = types.SamplingParams(max_tokens=16, temperature=0.0)
-        loop = asyncio.get_running_loop()
         def _sample():
             return sampling_client.sample(
                 prompt=prompt, num_samples=1, sampling_params=params
@@ -94,7 +117,6 @@ async def check_sampling(sampling_client, tokenizer):
             loop.run_in_executor(None, _sample),
             timeout=CHECK_TIMEOUT,
         )
-
         output_text = tokenizer.decode(result.sequences[0].tokens)
         return {
             "service": "sampling",
@@ -222,84 +244,61 @@ async def main():
     print("=== Tinker Health Check ===\n", flush=True)
 
     loop = asyncio.get_running_loop()
+    results = []
 
+    # 1. Reachability — HTTP /models (no gRPC dependency)
+    print("[1/4] Reachability ...", flush=True)
+    reachability = await check_reachability()
+    results.append(reachability)
+    print(f"      -> {reachability['status']}\n", flush=True)
+
+    model = reachability.get("_chosen_model") if reachability["status"] == "up" else None
+
+    if not model:
+        print("No model available — marking remaining checks as down.\n", flush=True)
+        for svc in ("sampling", "openai_compatible", "training_infra"):
+            results.append({"service": svc, "status": "down", "error": "no model available"})
+        results = ensure_all_services(results, "skipped: not reached in check flow")
+        print("=== Results ===")
+        print(json.dumps(results, indent=2))
+        await push_results(results)
+        return
+
+    print(f"      using model: {model}\n")
+
+    # 2. OpenAI-compatible — HTTP, independent of gRPC
+    print("[2/4] OpenAI-compatible ...", flush=True)
+    oai = await check_openai_compatible(model)
+    results.append(oai)
+    print(f"      -> {oai['status']}\n", flush=True)
+
+    # 3-4. gRPC-dependent checks (sampling + training)
     service_client = None
     try:
-        print("Connecting to Tinker ...", flush=True)
+        print("Connecting gRPC client ...", flush=True)
         service_client = await asyncio.wait_for(
             loop.run_in_executor(None, tinker.ServiceClient),
             timeout=CHECK_TIMEOUT,
         )
         print("      connected.\n", flush=True)
     except Exception as e:
-        print(f"      ServiceClient failed: {e}\n", flush=True)
-        results = [
-            {"service": svc, "status": "down", "error": f"ServiceClient init failed: {e}"}
-            for svc in ALL_SERVICES
-        ]
-        print("=== Results ===")
-        print(json.dumps(results, indent=2))
-        await push_results(results)
-        return
+        print(f"      gRPC connection failed: {e}\n", flush=True)
 
-    results = []
+    if service_client:
+        print("[3/4] Sampling ...", flush=True)
+        sampling = await check_sampling(service_client, model)
+        results.append(sampling)
+        print(f"      -> {sampling['status']}\n", flush=True)
 
-    print("[1/4] Reachability ...", flush=True)
-    reachability = await check_reachability(service_client)
-    results.append(reachability)
-    print(f"      -> {reachability['status']}\n", flush=True)
-
-    if reachability["status"] == "down":
-        print("Service unreachable — skipping remaining checks.")
-        for svc in ("sampling", "openai_compatible", "training_infra"):
-            results.append({"service": svc, "status": "down", "error": "skipped: service unreachable"})
+        print("[4/4] Training infra ...", flush=True)
+        training = await check_training_client(service_client, model)
+        results.append(training)
+        print(f"      -> {training['status']}\n", flush=True)
     else:
-        model = reachability.get("_chosen_model")
-        if not model:
-            print("No models available — skipping model-dependent checks.")
-            for svc in ("sampling", "openai_compatible", "training_infra"):
-                results.append({"service": svc, "status": "down", "error": "no models available on server"})
-        else:
-            print(f"      using model: {model}\n")
-
-            print("Preparing sampling client + tokenizer ...", flush=True)
-            sampling_client = None
-            tokenizer = None
-            try:
-                sampling_client = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: service_client.create_sampling_client(
-                            base_model=model, retry_config=NO_RETRY,
-                        ),
-                    ),
-                    timeout=CHECK_TIMEOUT,
-                )
-                tokenizer = await asyncio.wait_for(
-                    loop.run_in_executor(None, sampling_client.get_tokenizer),
-                    timeout=CHECK_TIMEOUT,
-                )
-                print("      done.\n", flush=True)
-            except Exception as e:
-                print(f"      tokenizer/client setup failed: {e}\n", flush=True)
-
-            print("[2/4] Sampling ...", flush=True)
-            if sampling_client and tokenizer:
-                sampling = await check_sampling(sampling_client, tokenizer)
-                results.append(sampling)
-                print(f"      -> {sampling['status']}\n", flush=True)
-            else:
-                print("      -> skipped (tokenizer unavailable, not a Tinker issue)\n")
-
-            print("[3/4] OpenAI-compatible ...", flush=True)
-            oai = await check_openai_compatible(model)
-            results.append(oai)
-            print(f"      -> {oai['status']}\n", flush=True)
-
-            print("[4/4] Training infra ...", flush=True)
-            training = await check_training_client(service_client, model)
-            results.append(training)
-            print(f"      -> {training['status']}\n", flush=True)
+        print("[3/4] Sampling ... -> skipped (gRPC unavailable)", flush=True)
+        results.append({"service": "sampling", "status": "down", "error": "gRPC connection failed"})
+        print("[4/4] Training infra ... -> skipped (gRPC unavailable)", flush=True)
+        results.append({"service": "training_infra", "status": "down", "error": "gRPC connection failed"})
 
     results = ensure_all_services(results, "skipped: not reached in check flow")
 
@@ -333,6 +332,4 @@ if __name__ == "__main__":
     try:
         loop.run_until_complete(main_with_timeout())
     finally:
-        # Don't call loop.close() or shutdown_default_executor() — gRPC
-        # threads block forever.  Results are already pushed; just exit.
         os._exit(0)
