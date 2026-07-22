@@ -1,0 +1,52 @@
+name: Delete false outage data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete false "down" rows from gRPC bug era
+        run: |
+          # Delete all rows between last real "up" and HTTP fix
+          # These were all false "down" caused by gRPC get_server_capabilities() hanging
+          START="2026-07-19T05:11:00+00:00"
+          END="2026-07-22T00:37:00+00:00"
+
+          echo "Deleting false 'down' rows from $START to $END..."
+
+          # Count rows first
+          COUNT=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${SUPABASE_URL}/rest/v1/check_results?checked_at=gte.${START}&checked_at=lt.${END}" \
+            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            -H "Prefer: count=exact" \
+            -I 2>&1 | tail -1)
+          echo "HTTP status for count: $COUNT"
+
+          # Get count from headers
+          curl -s -I \
+            "${SUPABASE_URL}/rest/v1/check_results?checked_at=gte.${START}&checked_at=lt.${END}" \
+            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            -H "Prefer: count=exact" 2>&1 | grep -i content-range
+
+          # Delete the rows
+          RESP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X DELETE \
+            "${SUPABASE_URL}/rest/v1/check_results?checked_at=gte.${START}&checked_at=lt.${END}" \
+            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            -H "Prefer: return=representation" \
+            -H "Prefer: count=exact")
+
+          HTTP_CODE=$(echo "$RESP" | tail -1 | sed 's/HTTP_STATUS://')
+          BODY=$(echo "$RESP" | sed '$d')
+
+          echo "Delete response HTTP: $HTTP_CODE"
+          echo "Deleted rows: $(echo "$BODY" | python3 -c 'import sys,json; data=json.load(sys.stdin); print(len(data))' 2>/dev/null || echo 'unknown')"
+          echo "Done."
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
