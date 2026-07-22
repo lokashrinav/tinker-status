@@ -253,52 +253,49 @@ async def main():
     print(f"      -> {reachability['status']}\n", flush=True)
 
     model = reachability.get("_chosen_model") if reachability["status"] == "up" else None
-
     if not model:
-        print("No model available — marking remaining checks as down.\n", flush=True)
-        for svc in ("sampling", "openai_compatible", "training_infra"):
-            results.append({"service": svc, "status": "down", "error": "no model available"})
-        results = ensure_all_services(results, "skipped: not reached in check flow")
-        print("=== Results ===")
-        print(json.dumps(results, indent=2))
-        await push_results(results)
-        return
-
-    print(f"      using model: {model}\n")
-
-    # 2. OpenAI-compatible — HTTP, independent of gRPC
-    print("[2/4] OpenAI-compatible ...", flush=True)
-    oai = await check_openai_compatible(model)
-    results.append(oai)
-    print(f"      -> {oai['status']}\n", flush=True)
-
-    # 3-4. gRPC-dependent checks (sampling + training)
-    service_client = None
-    try:
-        print("Connecting gRPC client ...", flush=True)
-        service_client = await asyncio.wait_for(
-            loop.run_in_executor(None, tinker.ServiceClient),
-            timeout=CHECK_TIMEOUT,
-        )
-        print("      connected.\n", flush=True)
-    except Exception as e:
-        print(f"      gRPC connection failed: {e}\n", flush=True)
-
-    if service_client:
-        print("[3/4] Sampling ...", flush=True)
-        sampling = await check_sampling(service_client, model)
-        results.append(sampling)
-        print(f"      -> {sampling['status']}\n", flush=True)
-
-        print("[4/4] Training infra ...", flush=True)
-        training = await check_training_client(service_client, model)
-        results.append(training)
-        print(f"      -> {training['status']}\n", flush=True)
+        model = PREFERRED_MODELS[0]
+        print(f"      no models listed, falling back to {model}\n")
     else:
-        print("[3/4] Sampling ... -> skipped (gRPC unavailable)", flush=True)
-        results.append({"service": "sampling", "status": "down", "error": "gRPC connection failed"})
-        print("[4/4] Training infra ... -> skipped (gRPC unavailable)", flush=True)
-        results.append({"service": "training_infra", "status": "down", "error": "gRPC connection failed"})
+        print(f"      using model: {model}\n")
+
+    if reachability["status"] == "down":
+        for svc in ("sampling", "openai_compatible", "training_infra"):
+            results.append({"service": svc, "status": "down", "error": "API unreachable"})
+    else:
+        # 2. OpenAI-compatible — HTTP, independent of gRPC
+        print("[2/4] OpenAI-compatible ...", flush=True)
+        oai = await check_openai_compatible(model)
+        results.append(oai)
+        print(f"      -> {oai['status']}\n", flush=True)
+
+        # 3-4. gRPC-dependent checks (sampling + training)
+        service_client = None
+        try:
+            print("Connecting gRPC client ...", flush=True)
+            service_client = await asyncio.wait_for(
+                loop.run_in_executor(None, tinker.ServiceClient),
+                timeout=CHECK_TIMEOUT,
+            )
+            print("      connected.\n", flush=True)
+        except Exception as e:
+            print(f"      gRPC connection failed: {e}\n", flush=True)
+
+        if service_client:
+            print("[3/4] Sampling ...", flush=True)
+            sampling = await check_sampling(service_client, model)
+            results.append(sampling)
+            print(f"      -> {sampling['status']}\n", flush=True)
+
+            print("[4/4] Training infra ...", flush=True)
+            training = await check_training_client(service_client, model)
+            results.append(training)
+            print(f"      -> {training['status']}\n", flush=True)
+        else:
+            print("[3/4] Sampling ... -> skipped (gRPC unavailable)", flush=True)
+            results.append({"service": "sampling", "status": "down", "error": "gRPC connection failed"})
+            print("[4/4] Training infra ... -> skipped (gRPC unavailable)", flush=True)
+            results.append({"service": "training_infra", "status": "down", "error": "gRPC connection failed"})
 
     results = ensure_all_services(results, "skipped: not reached in check flow")
 
