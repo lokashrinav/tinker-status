@@ -63,14 +63,6 @@ async def check_reachability():
             resp.raise_for_status()
             body = resp.json()
 
-        print(f"      /models response keys: {list(body.keys()) if isinstance(body, dict) else type(body).__name__}", flush=True)
-        if isinstance(body, dict):
-            for k, v in body.items():
-                if isinstance(v, list):
-                    print(f"      {k}: {len(v)} items", flush=True)
-                    if v:
-                        print(f"      first item keys: {list(v[0].keys()) if isinstance(v[0], dict) else v[0]}", flush=True)
-
         model_ids = [m["id"] for m in body.get("data", [])]
         chosen = pick_model(model_ids)
         return {
