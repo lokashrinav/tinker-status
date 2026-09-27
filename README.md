@@ -33,7 +33,11 @@ No servers, no backend beyond Supabase, everything on free tiers.
 
 ## Scheduling
 
-The workflow runs on GitHub's `schedule` trigger every 10 minutes. GitHub may occasionally delay or skip a run under load. GitHub also disables scheduled workflows in a public repo after 60 days without a commit, so a weekly `keepalive` job re-enables the workflow through the API to reset that clock. If checks ever stop, `gh workflow list --all` shows `disabled_inactivity`; `gh workflow enable check.yml` turns it back on. An external HTTP cron (e.g. [cron-job.org](https://cron-job.org)) can serve as a backup — see the workflow dispatch setup below.
+Each run checks Tinker, waits about nine minutes, then starts the next run itself (`workflow_dispatch` with the built-in token), so checks do not depend on GitHub's `schedule`, which often skips runs. Only one check runs at a time; extra starts merge into it. The `schedule` trigger and an optional external HTTP cron (e.g. [cron-job.org](https://cron-job.org), setup below) restart the chain if it ever breaks.
+
+GitHub disables scheduled workflows in a public repo after 60 days without a commit. Every run re-enables the workflow through the API, and commits `.github/heartbeat` when the last commit is 30 days old. If checks ever stop anyway, `gh workflow list --all` shows the state and `gh workflow run check.yml` restarts the chain.
+
+**Get told when checks stop:** create a free check at [healthchecks.io](https://healthchecks.io) with a 10-minute period and a 20-minute grace time, then save its ping URL as the `HEARTBEAT_URL` repository secret. Each successful run pings it; if the pings stop, it emails you.
 
 <details>
 <summary>Optional: external cron backup</summary>

@@ -1,32 +1,24 @@
 name: Tinker Health Check
 
-# workflow_dispatch: manual runs + optional external HTTP cron (see README).
-# schedule: baseline so checks still run if external cron fails (GitHub may delay/skip
-# scheduled jobs under load; external cron is still a good second path).
+# Each run checks Tinker, waits, then starts the next run itself, so checks never depend
+# on GitHub's schedule (it fired for only 15 of 300 runs) or on an outside cron (it
+# stopped on 2026-09-20). The schedule and any outside cron still help: they restart the
+# chain if it ever breaks. Only one check runs at a time, so extra starts merge into it.
 on:
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
-    # Weekly keepalive. GitHub disables scheduled workflows in public repos after 60 days
-    # without a commit (it did on 2026-09-20); re-enabling through the API resets that clock.
-    - cron: "23 4 * * 1"
 
 jobs:
-  keepalive:
-    if: github.event.schedule == '23 4 * * 1'
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 20
+    concurrency:
+      group: tinker-check
+      cancel-in-progress: false
     permissions:
       actions: write
-    steps:
-      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/check.yml/enable"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  check:
-    if: github.event.schedule != '23 4 * * 1'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -44,3 +36,41 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TINKER_TELEMETRY: "0"
+
+      # Dead man's switch: an outside service emails when these pings stop.
+      - name: Ping heartbeat
+        if: success() && env.HEARTBEAT_URL != ''
+        run: curl -fsS -m 10 --retry 3 "$HEARTBEAT_URL" > /dev/null
+        env:
+          HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
+
+      # GitHub disables scheduled workflows in public repos after 60 days without a
+      # commit (it did on 2026-09-20). Re-enable through the API on every run, and add a
+      # heartbeat commit when the last commit is 30 days old.
+      - name: Stay enabled
+        if: always()
+        run: |
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/check.yml/enable"
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 30 * 86400 )) ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            date -u +%FT%TZ > .github/heartbeat
+            git add .github/heartbeat
+            git commit -m "Heartbeat: keep scheduled checks enabled"
+            git push
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Start the next check
+        if: always() && !cancelled()
+        run: |
+          sleep 510
+          for attempt in 1 2 3; do
+            gh workflow run check.yml --ref main && exit 0
+            sleep 20
+          done
+          exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
