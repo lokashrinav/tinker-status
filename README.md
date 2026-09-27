@@ -33,7 +33,7 @@ No servers, no backend beyond Supabase, everything on free tiers.
 
 ## Scheduling
 
-The workflow runs on GitHub's `schedule` trigger every 10 minutes. GitHub may occasionally delay or skip a run under load. An external HTTP cron (e.g. [cron-job.org](https://cron-job.org)) can serve as a backup — see the workflow dispatch setup below.
+The workflow runs on GitHub's `schedule` trigger every 10 minutes. GitHub may occasionally delay or skip a run under load. GitHub also disables scheduled workflows in a public repo after 60 days without a commit, so a weekly `keepalive` job re-enables the workflow through the API to reset that clock. If checks ever stop, `gh workflow list --all` shows `disabled_inactivity`; `gh workflow enable check.yml` turns it back on. An external HTTP cron (e.g. [cron-job.org](https://cron-job.org)) can serve as a backup — see the workflow dispatch setup below.
 
 <details>
 <summary>Optional: external cron backup</summary>

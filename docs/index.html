@@ -520,13 +520,16 @@ function render() {
   const allUp = knownStatuses.length > 0 && knownStatuses.every(s => s === 'up');
   const allDown = knownStatuses.length > 0 && knownStatuses.every(s => s === 'down');
   const noData = knownStatuses.length === 0;
-  const oTxt = noData ? 'No data yet' : allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
-  const oCls = noData ? 'degraded' : allUp ? '' : allDown ? 'down' : 'degraded';
 
   const lastCheck = latest[SVCS[0].key]?.checked_at;
   const lastStr = lastCheck ? fmtTime(lastCheck) : '\u2014';
   const staleMs = lastCheck ? Date.now() - new Date(lastCheck).getTime() : Infinity;
   const isStale = staleMs > 30 * 60 * 1000;
+  // An hour without checks means the checker stopped; old results say nothing about now.
+  const checksStopped = lastCheck && staleMs > 60 * 60 * 1000;
+
+  const oTxt = noData ? 'No data yet' : checksStopped ? 'Status unknown: checks stopped' : allUp ? 'All systems operational' : allDown ? 'Major outage' : 'Experiencing issues';
+  const oCls = noData || checksStopped ? 'degraded' : allUp ? '' : allDown ? 'down' : 'degraded';
   const staleNote = isStale && lastCheck
     ? ` <span style="color:var(--yellow);font-weight:500">(${fmtDuration(staleMs)} ago)</span>`
     : '';

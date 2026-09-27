@@ -7,9 +7,24 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
+    # Weekly keepalive. GitHub disables scheduled workflows in public repos after 60 days
+    # without a commit (it did on 2026-09-20); re-enabling through the API resets that clock.
+    - cron: "23 4 * * 1"
 
 jobs:
+  keepalive:
+    if: github.event.schedule == '23 4 * * 1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/check.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   check:
+    if: github.event.schedule != '23 4 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
